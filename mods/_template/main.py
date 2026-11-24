@@ -12,6 +12,8 @@ def run(ctx):
     k = ctx.kompas()
     doc = k.active_document
     if doc is None:
-        k.message("Нет открытого документа")
+        ctx.log("Нет открытого документа")
         return
-    k.message(f"Активный документ: {doc.Name}")
+    # Только чтение. Сообщения идут в журнал мода, а не в окно КОМПАСа:
+    # блокирующее окно (k.message) подвесило бы и мод, и КОМПАС.
+    ctx.log(f"Активный документ: {doc.Name}")

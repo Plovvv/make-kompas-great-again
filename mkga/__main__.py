@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 from . import __version__
+from .core.safe_io import BackupStore, SafeIOError
 from .config import registry_source
 from .installer import (
     InstallError, default_mods_dir, install_from_registry, install_zip,
@@ -14,7 +16,7 @@ from .installer import (
 )
 from .manifest import ManifestError, load_manifest
 from .registry import RegistryError, load_registry, search
-from .runner import run_mod
+from .runner import run_mod, run_mod_dir
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,8 +37,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("id")
     s = sub.add_parser("run", help="запустить установленный мод")
     s.add_argument("id")
+    s = sub.add_parser("run-dev", help="запустить мод прямо из папки, без установки (для разработки)")
+    s.add_argument("path", type=Path)
     s = sub.add_parser("validate", help="проверить манифест мода в папке")
     s.add_argument("path", type=Path)
+    sub.add_parser("history", help="журнал изменений файлов, сделанных модами (для отката)")
+    s = sub.add_parser("undo", help="откатить сессию изменений из журнала")
+    s.add_argument("session_id")
+    s.add_argument("--force", action="store_true",
+                   help="откатить, даже если файлы изменены после сессии (затрёт эти правки!)")
     sub.add_parser("gui", help="окно хаба")
     return p
 
@@ -71,13 +80,34 @@ def main(argv: list[str] | None = None) -> int:
             print("Удалено." if uninstall(args.id, mods_dir) else "Такого мода нет.")
         elif args.cmd == "run":
             run_mod(mods_dir, args.id)
+        elif args.cmd == "run-dev":
+            run_mod_dir(args.path)
         elif args.cmd == "validate":
             m = load_manifest(args.path)
             print(f"OK: {m.id} {m.version} ({m.kind})")
+        elif args.cmd == "history":
+            sessions = BackupStore().sessions()
+            if not sessions:
+                print("Изменений файлов модами не было.")
+            for si in sessions:
+                when = time.strftime("%Y-%m-%d %H:%M", time.localtime(si.created))
+                print(f"{si.id}  {when}  {si.status:11} {si.mod_id}: {si.title} ({len(si.operations)} файл.)")
+        elif args.cmd == "undo":
+            report = BackupStore().undo(args.session_id, force=args.force)
+            if report.ok:
+                print(f"Откат выполнен, восстановлено файлов: {len(report.restored)}")
+                for p in report.restored:
+                    print(f"  {p}")
+            else:
+                print("Откат НЕ выполнен: эти файлы изменены после сессии:", file=sys.stderr)
+                for p in report.conflicts:
+                    print(f"  {p}", file=sys.stderr)
+                print("Если уверены, повторите с --force (правки после сессии будут потеряны).", file=sys.stderr)
+                return 1
         elif args.cmd == "gui":
             from .gui import launch
             launch(registry_source(args.registry), mods_dir)
-    except (ManifestError, RegistryError, InstallError) as e:
+    except (ManifestError, RegistryError, InstallError, SafeIOError) as e:
         print(f"Ошибка: {e}", file=sys.stderr)
         return 1
     return 0

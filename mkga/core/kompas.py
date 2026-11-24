@@ -35,33 +35,70 @@ class Kompas:
         """Активный документ (API7) или None."""
         return self.app7.ActiveDocument
 
+    @property
+    def version(self) -> tuple[int, int, int, int]:
+        """Версия КОМПАСа: (major, minor, release, build), например (24, 0, 3, 0).
+
+        Проверено на КОМПАС-3D v24: GetSystemVersion() возвращает (True, 24, 0, 3, 0).
+        """
+        ok, major, minor, release, build = self.app7.GetSystemVersion()
+        if not ok:
+            raise KompasNotAvailable("КОМПАС не сообщил свою версию")
+        return major, minor, release, build
+
     def message(self, text: str) -> None:
+        """Показать модальное окно КОМПАСа. НЕ использовать в модах.
+
+        Окно блокирует и КОМПАС, и вызывающий код, пока пользователь его не
+        закроет (см. docs/PRINCIPLES.md, п. 1.6). Для сообщений есть ctx.log.
+        """
         self.api5.ksMessage(text)
 
 
-def connect(visible: bool = True) -> Kompas:
+def connect(launch: bool = False) -> Kompas:
+    """Подключиться к КОМПАСу.
+
+    По умолчанию присоединяется только к УЖЕ ЗАПУЩЕННОМУ КОМПАСу (проверено на v24:
+    запущенный КОМПАС виден в таблице запущенных объектов под Kompas.Application.5
+    и .7). Если он не запущен, будет понятная ошибка, а новый экземпляр НЕ создаётся:
+    он не видит документы пользователя и занимает лицензию (docs/PRINCIPLES.md, п. 1).
+
+    launch=True разрешает запустить новый экземпляр через COM; в этом случае окно
+    КОМПАСа делается видимым.
+    """
     try:
         import pythoncom
-        from win32com.client import Dispatch, gencache
+        from win32com.client import Dispatch, GetActiveObject, gencache
     except ImportError as e:  # не Windows или нет pywin32
         raise KompasNotAvailable("нужен Windows и пакет pywin32 (pip install pywin32)") from e
 
+    launched = False
+
+    def get(progid: str):
+        nonlocal launched
+        try:
+            return GetActiveObject(progid)
+        except pythoncom.com_error:
+            if not launch:
+                raise KompasNotAvailable(
+                    "КОМПАС не запущен. Откройте КОМПАС-3D и повторите."
+                ) from None
+            launched = True
+            return Dispatch(progid)
+
     try:
-        m5 = gencache.EnsureModule(API5_TYPELIB, 0, 1, 0)
-        m7 = gencache.EnsureModule(API7_TYPELIB, 0, 1, 0)
+        # EnsureModule пишет кэш типов в %TEMP%\gen_py (в планах: отказаться от gencache).
+        gencache.EnsureModule(API5_TYPELIB, 0, 1, 0)
+        gencache.EnsureModule(API7_TYPELIB, 0, 1, 0)
         const5 = gencache.EnsureModule(CONSTANTS_TYPELIB, 0, 1, 0).constants
-        d5 = Dispatch("Kompas.Application.5")
-        d7 = Dispatch("Kompas.Application.7")
-        api5 = m5.KompasObject(
-            d5._oleobj_.QueryInterface(m5.KompasObject.CLSID, pythoncom.IID_IDispatch)
-        )
-        api7 = m7.IKompasAPIObject(
-            d7._oleobj_.QueryInterface(m7.IKompasAPIObject.CLSID, pythoncom.IID_IDispatch)
-        )
+        api5 = get("Kompas.Application.5")
+        api7 = get("Kompas.Application.7")
+        app7 = api7.Application
+        if launched:
+            app7.Visible = True
+    except KompasNotAvailable:
+        raise
     except Exception as e:  # pywintypes.com_error и пр.
         raise KompasNotAvailable(f"не удалось подключиться к КОМПАСу: {e}") from e
 
-    app7 = api7.Application
-    if visible:
-        app7.Visible = True
     return Kompas(api5=api5, api7=api7, const5=const5, app7=app7)
