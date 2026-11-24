@@ -1,0 +1,13 @@
+{
+  "id": "fasteners",
+  "name": "Метизы и фитинги",
+  "version": "0.0.1",
+  "description": "Быстрый подбор винтов, гаек, шайб, вставок, фитингов: поиск, параметрические детали, правильное оформление в спецификации.",
+  "author": "MKGA contributors",
+  "license": "MIT",
+  "kind": "app",
+  "entry": "main.py",
+  "kompas_versions": [22, 23, 24, 25],
+  "tags": ["fasteners", "catalog", "standard-parts"],
+  "requires": ["pywin32"]
+}

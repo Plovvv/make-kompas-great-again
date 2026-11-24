@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mkga"
+version = "0.1.0"
+description = "MAKE KOMPAS GREAT AGAIN: неофициальный хаб модов для КОМПАС-3D"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+[project.optional-dependencies]
+kompas = ["pywin32; sys_platform == 'win32'"]
+
+[project.scripts]
+mkga = "mkga.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["mkga*"]

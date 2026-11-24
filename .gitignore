@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+.idea/
+.vscode/
+# файлы КОМПАС не храним в репозитории
+*.m3d
+*.a3d
+*.cdw
+*.frw
+*.spw
