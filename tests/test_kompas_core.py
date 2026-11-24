@@ -26,25 +26,37 @@ def fake_win32(running: bool):
     api7.Application = app7
     api5 = mock.MagicMock(name="api5")
 
+    class FakeUnknown:
+        def __init__(self, obj):
+            self.obj = obj
+
+        def QueryInterface(self, _iid):
+            return self.obj
+
     def get_active(progid):
         calls["active"].append(progid)
         if not running:
             raise FakeComError("Операция недоступна")
-        return api5 if progid.endswith(".5") else api7
+        return FakeUnknown(api5 if progid.endswith(".5") else api7)
 
-    def dispatch(progid):
-        calls["dispatch"].append(progid)
-        return api5 if progid.endswith(".5") else api7
+    def dispatch(target):
+        if isinstance(target, str):  # запуск нового экземпляра по ProgID
+            calls["dispatch"].append(target)
+            return api5 if target.endswith(".5") else api7
+        return target  # уже полученный IDispatch: оборачиваем как есть
 
     pythoncom = types.ModuleType("pythoncom")
     pythoncom.com_error = FakeComError
+    pythoncom.GetActiveObject = get_active
+    pythoncom.IID_IDispatch = "IID_IDispatch"
+    dynamic = types.ModuleType("win32com.client.dynamic")
+    dynamic.Dispatch = dispatch
     client = types.ModuleType("win32com.client")
-    client.GetActiveObject = get_active
-    client.Dispatch = dispatch
-    client.gencache = mock.MagicMock(name="gencache")
+    client.dynamic = dynamic
     win32com = types.ModuleType("win32com")
     win32com.client = client
-    modules = {"pythoncom": pythoncom, "win32com": win32com, "win32com.client": client}
+    modules = {"pythoncom": pythoncom, "win32com": win32com,
+               "win32com.client": client, "win32com.client.dynamic": dynamic}
     return modules, calls, app7
 
 
@@ -78,13 +90,13 @@ class VersionTests(unittest.TestCase):
     def test_version_tuple(self):
         app7 = mock.MagicMock()
         app7.GetSystemVersion.return_value = (True, 24, 0, 3, 0)
-        k = Kompas(api5=None, api7=None, const5=None, app7=app7)
+        k = Kompas(api5=None, api7=None, app7=app7)
         self.assertEqual(k.version, (24, 0, 3, 0))
 
     def test_version_failure(self):
         app7 = mock.MagicMock()
         app7.GetSystemVersion.return_value = (False, 0, 0, 0, 0)
-        k = Kompas(api5=None, api7=None, const5=None, app7=app7)
+        k = Kompas(api5=None, api7=None, app7=app7)
         with self.assertRaises(KompasNotAvailable):
             k.version
 

@@ -25,3 +25,5 @@ jobs:
         shell: bash
         run: |
           for d in mods/*/; do python -m mkga validate "$d"; done
+      - name: Check mods do not bypass safe_io
+        run: python -m mkga check mods

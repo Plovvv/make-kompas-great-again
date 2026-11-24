@@ -7,7 +7,7 @@
   "license": "MIT",
   "kind": "macro",
   "entry": "main.py",
-  "kompas_versions": [22, 23, 24, 25],
+  "kompas_versions": [24],
   "tags": ["template", "example"],
   "requires": ["pywin32"]
 }

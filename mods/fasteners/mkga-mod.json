@@ -7,7 +7,7 @@
   "license": "MIT",
   "kind": "app",
   "entry": "main.py",
-  "kompas_versions": [22, 23, 24, 25],
+  "kompas_versions": [],
   "tags": ["fasteners", "catalog", "standard-parts"],
   "requires": ["pywin32"]
 }

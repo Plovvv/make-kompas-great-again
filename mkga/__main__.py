@@ -5,10 +5,13 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+import traceback
 from pathlib import Path
 
 from . import __version__
+from .core.kompas import KompasError
 from .core.safe_io import BackupStore, SafeIOError
+from .guard import check_path, violations
 from .config import registry_source
 from .installer import (
     InstallError, default_mods_dir, install_from_registry, install_zip,
@@ -17,6 +20,49 @@ from .installer import (
 from .manifest import ManifestError, load_manifest
 from .registry import RegistryError, load_registry, search
 from .runner import run_mod, run_mod_dir
+
+
+def _add_run_options(s: argparse.ArgumentParser) -> None:
+    s.add_argument("--fake-kompas", action="store_true",
+                   help="не подключаться к КОМПАСу, а использовать фейковый (для разработки и проверки)")
+    s.add_argument("--yes", action="store_true",
+                   help="подтверждать предупреждения о версии КОМПАСа без вопроса")
+
+
+def _cli_confirm(yes: bool):
+    """Вопрос пользователю в консоли. Без терминала и без --yes ответ «нет»."""
+    def confirm(message: str) -> bool:
+        print(f"Предупреждение: {message}", file=sys.stderr)
+        if yes:
+            return True
+        if not sys.stdin or not sys.stdin.isatty():
+            return False
+        return input("Продолжить? [y/N] ").strip().lower() in ("y", "yes", "д", "да")
+    return confirm
+
+
+def _connector(args):
+    """None: обычное подключение к КОМПАСу; иначе фейковый КОМПАС с документом-заглушкой."""
+    if not args.fake_kompas:
+        return None
+    from .core.fake import FakeDocument, make_fake_kompas
+    return lambda: make_fake_kompas(documents=[FakeDocument("Фейковый документ.m3d")])
+
+
+def _run_guarded(call) -> int:
+    """Запуск мода: ошибка мода не должна ронять хаб и не показывается как «падение»."""
+    try:
+        call()
+    except (KompasError, SafeIOError) as e:
+        print(f"Ошибка: {e}", file=sys.stderr)
+        return 1
+    except (ManifestError, InstallError):
+        raise
+    except Exception as e:  # мод упал: показываем причину и сохраняем работоспособность хаба
+        traceback.print_exc()
+        print(f"Мод завершился с ошибкой: {type(e).__name__}: {e}", file=sys.stderr)
+        return 2
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,9 +83,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("id")
     s = sub.add_parser("run", help="запустить установленный мод")
     s.add_argument("id")
+    _add_run_options(s)
     s = sub.add_parser("run-dev", help="запустить мод прямо из папки, без установки (для разработки)")
     s.add_argument("path", type=Path)
+    _add_run_options(s)
     s = sub.add_parser("validate", help="проверить манифест мода в папке")
+    s.add_argument("path", type=Path)
+    s = sub.add_parser("check", help="проверить код мода: нет ли записи файлов в обход ctx.session")
     s.add_argument("path", type=Path)
     sub.add_parser("history", help="журнал изменений файлов, сделанных модами (для отката)")
     s = sub.add_parser("undo", help="откатить сессию изменений из журнала")
@@ -79,12 +129,21 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "uninstall":
             print("Удалено." if uninstall(args.id, mods_dir) else "Такого мода нет.")
         elif args.cmd == "run":
-            run_mod(mods_dir, args.id)
+            return _run_guarded(lambda: run_mod(
+                mods_dir, args.id, connect=_connector(args), confirm=_cli_confirm(args.yes)))
         elif args.cmd == "run-dev":
-            run_mod_dir(args.path)
+            return _run_guarded(lambda: run_mod_dir(
+                args.path, connect=_connector(args), confirm=_cli_confirm(args.yes)))
         elif args.cmd == "validate":
             m = load_manifest(args.path)
             print(f"OK: {m.id} {m.version} ({m.kind})")
+        elif args.cmd == "check":
+            findings = check_path(args.path)
+            for f in findings:
+                print(f)
+            bad = violations(findings)
+            print(f"Нарушений: {len(bad)}, разрешено с пометкой: {len(findings) - len(bad)}")
+            return 1 if bad else 0
         elif args.cmd == "history":
             sessions = BackupStore().sessions()
             if not sessions:

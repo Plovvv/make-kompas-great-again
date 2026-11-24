@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from mkga.__main__ import main
+from mkga.core.fake import make_fake_kompas
 from mkga.installer import install_zip
 from mkga.runner import ModContext, run_mod
 from tests.helpers import good_manifest, make_zip
@@ -29,10 +30,11 @@ class RunnerTests(unittest.TestCase):
         install_zip(make_zip(self.tmp / "a.zip", good_manifest(), main_py=code), self.mods)
         logs = []
         calls = []
+        fake = make_fake_kompas(version=(24, 0, 3, 0))
         ctx = ModContext(mod_dir=self.mods / "demo-mod", data_dir=self.tmp / "data",
-                         log=logs.append, connect=lambda: calls.append(1) or "FAKE")
-        self.assertEqual(run_mod(self.mods, "demo-mod", ctx), ("FAKE", True))
-        self.assertEqual(logs, ["hi"])
+                         log=logs.append, connect=lambda: calls.append(1) or fake)
+        self.assertEqual(run_mod(self.mods, "demo-mod", ctx), (fake, True))
+        self.assertIn("hi", logs)  # плюс строка о версии КОМПАСа от сверки с манифестом
         self.assertEqual(len(calls), 1)  # подключение создаётся один раз
 
     def test_missing_run(self):
