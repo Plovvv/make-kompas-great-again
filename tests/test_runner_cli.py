@@ -43,11 +43,13 @@ class RunnerTests(unittest.TestCase):
         with self.assertRaises(AttributeError):
             run_mod(self.mods, "demo-mod", ctx)
 
-    def test_repo_mods_run_without_kompas(self):
-        # заглушка fasteners не обращается к КОМПАСу
+    def test_repo_template_mod_runs_on_the_fake_kompas(self):
+        # окно мода fasteners здесь не открываем (это mainloop): его проверяет tests/test_fasteners.py
+        from mkga.core.fake import make_fake_kompas
         logs = []
-        ctx = ModContext(mod_dir=ROOT / "mods" / "fasteners", data_dir=self.tmp / "d", log=logs.append)
-        run_mod(ROOT / "mods", "fasteners", ctx)
+        ctx = ModContext(mod_dir=ROOT / "mods" / "_template", data_dir=self.tmp / "d", log=logs.append,
+                         connect=make_fake_kompas)
+        run_mod(ROOT / "mods", "_template", ctx)
         self.assertTrue(logs)
 
     def test_template_without_kompas_gives_clear_error(self):

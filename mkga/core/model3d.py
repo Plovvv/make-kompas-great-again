@@ -26,6 +26,7 @@ import math
 from pathlib import Path
 from typing import Sequence
 
+from . import com_iface
 from . import constants as C
 from .kompas import Kompas, KompasError, com_errors
 
@@ -33,6 +34,10 @@ _PLANES = {"XOY": C.o3d_planeXOY, "XOZ": C.o3d_planeXOZ, "YOZ": C.o3d_planeYOZ}
 _AXES = {"OX": C.o3d_axisOX, "OY": C.o3d_axisOY, "OZ": C.o3d_axisOZ}
 _DIRECTIONS = {"normal": C.dtNormal, "reverse": C.dtReverse, "both": C.dtBoth, "middle": C.dtMiddlePlane}
 LINE_MAIN = 1  # стиль «основная линия» (проверено)
+PROP_TITLE = 5          # свойство документа «Наименование»
+PROP_OBJECT_TYPE = 14   # свойство документа «Тип объекта» (Деталь, Стандартное изделие, ...)
+SPEC_STYLE_DEFAULT = 1  # стиль спецификации по умолчанию (проверено на v24)
+SPEC_STANDARD, SPEC_OTHER = 35, 40   # номера разделов: «Стандартные изделия», «Прочие изделия»
 
 
 class ModelError(KompasError):
@@ -109,6 +114,20 @@ class Sketch:
             s = view.LineSegments.Add()
             s.X1, s.Y1, s.X2, s.Y2, s.Style = float(x1), float(y1), float(x2), float(y2), style
             s.Update()
+        self.shapes += 1
+
+    def arc(self, cx: float, cy: float, radius: float, start_deg: float, end_deg: float) -> None:
+        """Дуга окружности: центр (cx, cy), радиус, углы в градусах от оси X; идёт ПРОТИВ часовой стрелки от start к end."""
+        if radius <= 0:
+            raise ModelError(f"радиус дуги должен быть больше нуля, получено {radius}")
+        if start_deg == end_deg:
+            raise ModelError("у дуги совпадают начальный и конечный углы")
+        view = self._require_open()
+        with com_errors("дуга в эскизе"):
+            a = view.Arcs.Add()
+            a.Xc, a.Yc, a.Radius = float(cx), float(cy), float(radius)
+            a.Angle1, a.Angle2, a.Direction, a.Style = float(start_deg), float(end_deg), False, LINE_MAIN   # Direction=False идёт против часовой (проверено)
+            a.Update()
         self.shapes += 1
 
     def polyline(self, points: Sequence[tuple[float, float]], closed: bool = True) -> None:
@@ -258,6 +277,128 @@ class Part:
                 self.top.Marking = marking
             if material is not None and not self.top.SetMaterial(material, float(density)):
                 raise ModelError(f"КОМПАС не принял материал {material!r}")
+
+    # --- свойства документа, раздел спецификации (проверено на v24, см. docs/MODEL3D.md) -----------------------
+    def _doc_property(self, prop_id: int, value: str) -> None:
+        """Записать свойство документа по номеру через менеджер свойств КОМПАСа (IPropertyMng + IPropertyKeeper)."""
+        with com_errors("свойства документа"):
+            props = com_iface.get(self.kompas.app7, "IPropertyMng", "GetProperties", self.doc)
+        found = next((p for p in props if int(p.Id) == prop_id), None)
+        if found is None:
+            raise ModelError(f"в КОМПАСе нет свойства документа № {prop_id}")
+        if not com_iface.call(self.doc, "IPropertyKeeper", "SetPropertyValue", found, value, True):
+            raise ModelError(f"КОМПАС не принял значение свойства № {prop_id}: {value!r}")
+
+    def set_title(self, text: str) -> None:
+        """Наименование детали (свойство «Наименование» № 5) и имя детали в дереве модели."""
+        self._doc_property(PROP_TITLE, text)
+        with com_errors("имя детали"):
+            self.top.Name = text
+
+    def set_object_type(self, text: str = "Стандартное изделие") -> None:
+        """Свойство «Тип объекта» № 14: «Стандартное изделие» отправляет деталь в раздел спецификации «Стандартные изделия».
+
+        Допустимые значения даёт КОМПАС (Деталь, Сборочная единица, Стандартное изделие, ...). Проверено на v24:
+        значение записывается и сохраняется в файле.
+        """
+        self._doc_property(PROP_OBJECT_TYPE, text)
+
+    def add_spec_object(self, section: int) -> None:
+        """Объект спецификации детали в раздел `section` (например 40 = «Прочие изделия», 35 = «Стандартные изделия»).
+
+        Проверено на v24: создаётся и сохраняется в файле детали. Как раздел отображается в спецификации СБОРКИ,
+        на живой сборке пока не проверялось.
+        """
+        with com_errors("объект спецификации"):
+            description = self.doc.SpecificationDescriptions.Add("", SPEC_STYLE_DEFAULT, "")
+            obj = description.BaseObjects.Add(int(section), 1.0)
+            obj.IncludeGeometry(self.top, True)
+            obj.Update()
+
+    # --- грани и резьба ---------------------------------------------------------------------------------
+    def faces(self) -> list:
+        """Все грани детали (IFace). Проверено на v24."""
+        with com_errors("грани детали"):
+            raw = com_iface.get(self.top, "IFeature7", "ModelObjects", C.o3d_face)
+        return list(raw or ())
+
+    def cylinder_faces(self, radius: float | None = None, tol: float = 1e-6) -> list:
+        """Цилиндрические грани (опционально только заданного радиуса, мм)."""
+        found = []
+        with com_errors("поиск цилиндров"):
+            for f in self.faces():
+                if f.IsCylinder and (radius is None or abs(float(f.Radius) - radius) <= tol):
+                    found.append(f)
+        return found
+
+    def planar_area_mm2(self) -> float:
+        """Суммарная площадь плоских граней (мм2): точная проверка геометрии там, где расчёт массы КОМПАС неточен.
+
+        Проверено на v24: площади плоских граней совпадают с расчётом до 1e-5, в отличие от массы тел с коническими
+        фасками на шестиграннике (погрешность около 1 %).
+        """
+        total = 0.0
+        with com_errors("площадь граней"):
+            for f in self.faces():
+                if f.IsPlanar:
+                    total += float(f.GetArea(C.ksLUnMM))
+        return total
+
+    def verify_planar_area(self, expected_mm2: float, rel_tol: float = 1e-6) -> float:
+        got = self.planar_area_mm2()
+        err = abs(got - expected_mm2) / expected_mm2
+        if err > rel_tol:
+            raise ModelError(f"площадь плоских граней {got:.4f} мм² отличается от расчётной {expected_mm2:.4f} мм² "
+                             f"на {err:.2e} (допуск {rel_tol:.0e})")
+        return got
+
+    def thread(self, radius: float, length: float | None = None, *,
+               start_near: tuple[float, float, float] | None = None) -> tuple[float, float, float, float, float, float]:
+        """Условное изображение резьбы на цилиндре радиуса `radius` (мм): тонкая окружность на виде, объём не меняется.
+
+        length=None: на всю длину цилиндра. Иначе резьба длиной `length` отсчитывается от торцевой кромки цилиндра,
+        ближайшей к точке `start_near` (x, y, z): по умолчанию КОМПАС начинает от кромки, которая ему «первая»
+        (у винта это головка), а нужно от конца. Возвращаются крайние точки резьбы (x1, y1, z1, x2, y2, z2).
+        Проверено на v24: резьба от кромки конца винта идёт от самого конца (с фаской), объём детали не меняется.
+        """
+        faces = self.cylinder_faces(radius)
+        if not faces:
+            raise ModelError(f"нет цилиндрической поверхности радиуса {radius:g} мм для резьбы")
+        face = faces[0]
+        border = self._nearest_edge(face, start_near) if start_near is not None else None
+        with com_errors("условное изображение резьбы"):
+            t = self.top.Threads.Add()
+            t.BaseObject = face
+            t.AutoDiameter = True
+            if length is None:
+                t.AutoLenght = True
+            else:
+                t.AutoLenght = False
+                t.Lenght = float(length)
+            if border is not None:
+                t.InitialBorder = border
+            built = t.Update()
+        if not built:
+            raise ModelError("КОМПАС не смог построить условное изображение резьбы")
+        outs = com_iface.out_doubles(6)
+        if not com_iface.invoke_with_outs(t, "GetLimitPoints", *outs):
+            raise ModelError("КОМПАС не сообщил границы резьбы")
+        return tuple(round(float(o.value), 6) for o in outs)
+
+    @staticmethod
+    def _nearest_edge(face, point: tuple[float, float, float]):
+        """Ограничивающее ребро грани, начальная точка которого ближе всего к `point`."""
+        best, best_dist = None, math.inf
+        with com_errors("рёбра грани"):
+            for edge in face.LimitingEdges or ():
+                outs = com_iface.out_doubles(3)
+                com_iface.invoke_with_outs(edge, "GetPoint", True, *outs)
+                dist = math.dist([o.value for o in outs], point)
+                if dist < best_dist:
+                    best, best_dist = edge, dist
+        if best is None:
+            raise ModelError("у цилиндрической грани нет рёбер")
+        return best
 
     def update(self) -> None:
         """Пересчитать деталь (возвращаемое значение КОМПАСа не показатель ошибки: после успеха бывает False)."""

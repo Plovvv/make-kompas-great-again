@@ -23,7 +23,7 @@
 
 ## Статус
 
-Версия 0.1. Ядро, 3D-слой, хаб, выпуск и проверка модов готовы; всё проверено на **КОМПАС-3D v24 (полная версия)**. Каталог модов пока пуст: первые моды ещё пишутся. Другие версии и редакции КОМПАС не проверялись, отчёты о проверке очень нужны ([docs/VERIFICATION.md](docs/VERIFICATION.md), матрица: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)). План и статусы: [docs/ROADMAP.md](docs/ROADMAP.md).
+Версия 0.1. Ядро, 3D-слой, хаб, выпуск и проверка модов готовы; всё проверено на **КОМПАС-3D v24 (полная версия)**. Первый мод готов: **[Метизы и фитинги](mods/fasteners/README.md)** (DIN 912, 7991, 125, 127, 934, ISO 7380: деталь с нужным именем и разделом спецификации, чертёж с размерами, свои детали таблицей). В реестр модов он ещё не опубликован. Другие версии и редакции КОМПАС не проверялись, отчёты о проверке очень нужны ([docs/VERIFICATION.md](docs/VERIFICATION.md), матрица: [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)). План и статусы: [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Установка
 
@@ -44,12 +44,13 @@ python -m mkga gui
 python -m unittest discover -s tests -t .       # тесты без КОМПАС (живые пропускаются)
 python -m mkga check mods                       # страж: нет записи файлов в обход ctx.session
 python -m mkga run-dev mods/_template --fake-kompas
+python -m mkga run-dev mods/fasteners           # мод «Метизы и фитинги» (нужен запущенный КОМПАС)
 python -m mkga ui-demo --fake-kompas            # образец окна мода
 python tools/inspect_api.py find Extrusion      # справочник по API КОМПАС из библиотеки типов
 ```
 
 С открытым КОМПАС можно прогнать живые проверки (создают свой документ, ваши не трогают):
-`MKGA_LIVE_KOMPAS=1 python -m unittest tests.test_live_kompas tests.test_live_model3d -v`.
+`MKGA_LIVE_KOMPAS=1 python -m unittest tests.test_live_kompas tests.test_live_model3d tests.test_live_fasteners -v`.
 
 ## Документация
 
@@ -57,6 +58,7 @@ python tools/inspect_api.py find Extrusion      # справочник по API 
 |---|---|
 | [docs/WRITING_MODS.md](docs/WRITING_MODS.md) | как написать и выпустить мод |
 | [docs/MODEL3D.md](docs/MODEL3D.md) | построение 3D-деталей, особенности КОМПАС |
+| [mods/fasteners/README.md](mods/fasteners/README.md), [ADDING_PARTS.md](mods/fasteners/docs/ADDING_PARTS.md) | мод метизов, как добавить свою деталь |
 | [docs/UI_STYLE.md](docs/UI_STYLE.md) | единый стиль интерфейса |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | формат манифеста, реестра, модель безопасности |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | маршрут и статусы |

@@ -1,13 +1,13 @@
 {
   "id": "fasteners",
   "name": "Метизы и фитинги",
-  "version": "0.0.1",
-  "description": "Быстрый подбор винтов, гаек, шайб, вставок, фитингов: поиск, параметрические детали, правильное оформление в спецификации.",
+  "version": "0.1.0",
+  "description": "Каталог стандартных крепёжных деталей (DIN, ISO): выбор типоразмера и длины, чертёж с размерами, создание детали с нужным именем и разделом спецификации.",
   "author": "MKGA contributors",
   "license": "MIT",
   "kind": "app",
   "entry": "main.py",
-  "kompas_versions": [],
-  "tags": ["fasteners", "catalog", "standard-parts"],
+  "kompas_versions": [24],
+  "tags": ["fasteners", "catalog", "standard-parts", "din", "iso"],
   "requires": ["pywin32"]
 }

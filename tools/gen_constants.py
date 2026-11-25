@@ -43,6 +43,7 @@ GROUPS: list[tuple[str, list[str]]] = [
         r"pr(Base|Boss|Cut)(Extrusion|Rotated|Evolution|Loft)",
         r"pr(ExtrusionSurface|EvolutionSurface|Fillet3D|Chamfer3D|Hole[A-Za-z0-9]*|CutByPlane|CutBySketch)",
     ]),
+    ("Единицы длины (ksLengthUnitsEnum)", [r"ksLUn(SM|MM|DM|M)"]),
     ("Размеры (ksDim*)", [r"ksDim[A-Z][A-Za-z0-9]*"]),
     ("Исполнения КОМПАСа (ksKompas*): назначение значений ещё не проверено", [r"ksKompas[A-Z][A-Za-z0-9]*"]),
 ]
@@ -53,7 +54,7 @@ GROUPS: list[tuple[str, list[str]]] = [
 GROUPS_3D: list[tuple[str, list[str]]] = [
     ("3D: плоскости и оси детали по умолчанию", [r"o3d_plane(XOY|XOZ|YOZ)", r"o3d_axis(OX|OY|OZ)"]),
     ("3D: типы объектов и операций", [
-        r"o3d_(sketch|part|baseExtrusion|bossExtrusion|cutExtrusion|baseRotated|bossRotated|cutRotated|cutBySketch)",
+        r"o3d_(sketch|part|baseExtrusion|bossExtrusion|cutExtrusion|baseRotated|bossRotated|cutRotated|cutBySketch|face|edge|thread)",
     ]),
     ("3D: направление выдавливания (ksDirectionTypeEnum)", [r"dt(Normal|Reverse|Both|MiddlePlane)"]),
     ("3D: тип окончания выдавливания (ksEndTypeEnum)", [

@@ -105,8 +105,8 @@ class RunDirTests(unittest.TestCase):
     def test_run_mod_dir_uses_given_context(self):
         with tempfile.TemporaryDirectory() as tmp:
             logs = []
-            ctx = ModContext(mod_dir=ROOT / "mods" / "fasteners", data_dir=Path(tmp) / "d", log=logs.append)
-            run_mod_dir(ROOT / "mods" / "fasteners", ctx)
+            ctx = ModContext(mod_dir=ROOT / "mods" / "_template", data_dir=Path(tmp) / "d", log=logs.append)
+            run_mod_dir(ROOT / "mods" / "_template", ctx)
             self.assertTrue(logs)
             self.assertTrue((Path(tmp) / "d").is_dir())
 

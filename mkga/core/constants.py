@@ -167,6 +167,12 @@ prHoleCounterdrill = 20199
 prHoleCountersinking = 20198
 prHoleSimple = 20196
 
+# --- Единицы длины (ksLengthUnitsEnum) (4) ---------------------------
+ksLUnDM = 2
+ksLUnM = 3
+ksLUnMM = 1
+ksLUnSM = 0
+
 # --- Размеры (ksDim*) (25) --------------------------------------------
 ksDimACentre = 2
 ksDimACentreLowFont = 0
@@ -219,7 +225,7 @@ o3d_planeXOY = 1
 o3d_planeXOZ = 2
 o3d_planeYOZ = 3
 
-# --- 3D: типы объектов и операций (9) --------------------------------
+# --- 3D: типы объектов и операций (12) --------------------------------
 o3d_baseExtrusion = 24
 o3d_baseRotated = 27
 o3d_bossExtrusion = 25
@@ -227,8 +233,11 @@ o3d_bossRotated = 28
 o3d_cutBySketch = 51
 o3d_cutExtrusion = 26
 o3d_cutRotated = 29
+o3d_edge = 7
+o3d_face = 6
 o3d_part = 104
 o3d_sketch = 5
+o3d_thread = 58
 
 # --- 3D: направление выдавливания (ksDirectionTypeEnum) (4) ----------
 dtBoth = 2
@@ -394,6 +403,10 @@ ALL = {
     "prHoleCounterdrill": prHoleCounterdrill,
     "prHoleCountersinking": prHoleCountersinking,
     "prHoleSimple": prHoleSimple,
+    "ksLUnDM": ksLUnDM,
+    "ksLUnM": ksLUnM,
+    "ksLUnMM": ksLUnMM,
+    "ksLUnSM": ksLUnSM,
     "ksDimACentre": ksDimACentre,
     "ksDimACentreLowFont": ksDimACentreLowFont,
     "ksDimALowerBoundary": ksDimALowerBoundary,
@@ -447,8 +460,11 @@ ALL = {
     "o3d_cutBySketch": o3d_cutBySketch,
     "o3d_cutExtrusion": o3d_cutExtrusion,
     "o3d_cutRotated": o3d_cutRotated,
+    "o3d_edge": o3d_edge,
+    "o3d_face": o3d_face,
     "o3d_part": o3d_part,
     "o3d_sketch": o3d_sketch,
+    "o3d_thread": o3d_thread,
     "dtBoth": dtBoth,
     "dtMiddlePlane": dtMiddlePlane,
     "dtNormal": dtNormal,

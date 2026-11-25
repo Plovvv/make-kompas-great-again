@@ -187,6 +187,18 @@ class Kompas:
         self._created.append(doc)
         return doc
 
+    def open_document(self, path: str | Path, visible: bool = True):
+        """Открыть существующий файл документа (по умолчанию в новой вкладке, видимым).
+
+        Проверено на КОМПАС v24: Documents.Open(путь, видимый, только для чтения). Закрывать такой документ
+        мод не должен (он принадлежит пользователю): поэтому в `_created` он не попадает.
+        """
+        p = Path(path)
+        if not p.is_file():
+            raise KompasError(f"файл не найден: {p}")
+        with com_errors(f"открытие {p.name}"):
+            return self.app7.Documents.Open(str(p.resolve()), visible, False)
+
     def close_document(self, doc, save: bool = False) -> None:
         """Закрыть документ, созданный через new_document (по умолчанию БЕЗ сохранения).
 

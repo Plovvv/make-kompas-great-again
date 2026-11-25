@@ -144,3 +144,58 @@ class LiveModel3dTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(LIVE, "живая проверка: задайте MKGA_LIVE_KOMPAS=1 и запустите КОМПАС")
+class LiveArcThreadPropertyTests(unittest.TestCase):
+    """Дуга в эскизе, условное изображение резьбы, свойства документа (проверено на v24)."""
+
+    @classmethod
+    def setUpClass(cls):
+        from mkga.core.kompas import connect
+        cls.k = connect()
+
+    def setUp(self):
+        from mkga.core.model3d import Part
+        self.count = self.k.app7.Documents.Count
+        self.part = Part.new(self.k)
+
+    def tearDown(self):
+        self.part.close()
+        self.assertEqual(self.k.app7.Documents.Count, self.count)
+
+    def test_arc_spherical_cap(self):
+        dk, h = 14.0, 4.4
+        r = ((dk / 2) ** 2 + h ** 2) / (2 * h)
+        rim = math.degrees(math.atan2(r - h, dk / 2))
+        with self.part.sketch("XOY") as sk:
+            sk.arc(0, -r, r, rim, 90.0)                      # против часовой от кромки к вершине
+            sk.line(0, 0, 0, -h)
+            sk.line(0, -h, dk / 2, -h)
+        self.part.revolve(sk, axis="OY")
+        self.part.verify_volume(math.pi * h * (3 * (dk / 2) ** 2 + h ** 2) / 6, TOL)
+
+    def test_thread_does_not_change_volume_and_starts_from_the_requested_edge(self):
+        with self.part.sketch("XOY") as sk:
+            sk.polyline([(0, 0), (4, 0), (4, -30), (0, -30)])
+        self.part.revolve(sk, axis="OY")
+        before = self.part.volume_mm3
+        limits = self.part.thread(4.0, 10.0, start_near=(4.0, -30.0, 0.0))     # 10 мм от нижнего торца
+        self.assertAlmostEqual(self.part.volume_mm3, before, delta=before * 1e-9)
+        ys = sorted((limits[1], limits[4]))
+        self.assertAlmostEqual(ys[0], -30.0, places=3)
+        self.assertAlmostEqual(ys[1], -20.0, places=3)
+
+    def test_thread_needs_a_cylinder_of_that_radius(self):
+        from mkga.core.model3d import ModelError
+        with self.part.sketch("XOY") as sk:
+            sk.polyline([(0, 0), (4, 0), (4, -30), (0, -30)])
+        self.part.revolve(sk, axis="OY")
+        with self.assertRaises(ModelError):
+            self.part.thread(7.0)
+
+    def test_planar_area_of_a_cylinder(self):
+        with self.part.sketch("XOY") as sk:
+            sk.circle(0, 0, 10)
+        self.part.extrude(sk, 20)
+        self.part.verify_planar_area(2 * math.pi * 10 ** 2, 1e-9)         # два торца, боковая цилиндрическая не считается
