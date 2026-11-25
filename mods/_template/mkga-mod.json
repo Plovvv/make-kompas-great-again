@@ -2,12 +2,19 @@
   "id": "hello-kompas",
   "name": "Привет, КОМПАС",
   "version": "0.1.0",
-  "description": "Шаблон мода: показывает в КОМПАСе сообщение с именем активного документа.",
+  "description": "Шаблон мода: выводит в журнал имя активного документа КОМПАС.",
   "author": "MKGA contributors",
   "license": "MIT",
   "kind": "macro",
   "entry": "main.py",
-  "kompas_versions": [24],
-  "tags": ["template", "example"],
-  "requires": ["pywin32"]
+  "kompas_versions": [
+    24
+  ],
+  "tags": [
+    "template",
+    "example"
+  ],
+  "requires": [
+    "pywin32"
+  ]
 }

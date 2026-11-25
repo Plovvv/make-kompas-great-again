@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -86,11 +86,36 @@ def com_thread() -> Iterator[None]:
         pythoncom.CoUninitialize()
 
 
+class _Out:
+    """Заглушка выходного параметра без pywin32 (тесты, фейковый КОМПАС): значение кладётся в .value."""
+
+    def __init__(self, value=0):
+        self.value = value
+
+
+def out_ints(count: int) -> list:
+    """Выходные целые параметры для вызова COM-метода при позднем связывании (проверено на API5 v24).
+
+    Метод с [out]-параметрами нельзя вызвать без них или с обычными числами; нужны VARIANT по ссылке:
+
+        outs = out_ints(4)
+        api5.ksGetSystemVersion(*outs)      # вернёт код результата
+        major, minor, release, build = (o.value for o in outs)
+    """
+    try:
+        import pythoncom
+        from win32com.client import VARIANT
+    except ImportError:
+        return [_Out() for _ in range(count)]
+    return [VARIANT(pythoncom.VT_I4 | pythoncom.VT_BYREF, 0) for _ in range(count)]
+
+
 @dataclass
 class Kompas:
     api5: Any            # KompasObject
     api7: Any            # IKompasAPIObject
     app7: Any            # IApplication (api7.Application)
+    _created: list = field(default_factory=list, init=False, repr=False)  # документы, созданные нами
 
     @property
     def constants(self):
@@ -135,9 +160,45 @@ class Kompas:
             raise KompasNotAvailable("КОМПАС не сообщил свою версию")
         return major, minor, release, build
 
+    @property
+    def api5_version(self) -> tuple[int, int, int, int]:
+        """Версия КОМПАСа через API5 (ksGetSystemVersion с выходными параметрами). Совпадает с `version`.
+
+        Проверено на КОМПАС-3D v24: (24, 0, 3, 0). Служит образцом вызова методов API5 с [out]-параметрами.
+        """
+        outs = out_ints(4)
+        with com_errors("чтение версии через API5"):
+            self.api5.ksGetSystemVersion(*outs)
+        major, minor, release, build = (o.value for o in outs)
+        return major, minor, release, build
+
     def supports(self, feature: str) -> bool:
         """Есть ли возможность в этой версии КОМПАСа (таблица core/versions.py)."""
         return versions.supports(feature, self.version)
+
+    def new_document(self, doc_type: int, visible: bool = True):
+        """Создать НОВЫЙ документ (тип из mkga.core.constants, например ksDocumentPart) и запомнить его.
+
+        Проверено на КОМПАС v24: Documents.Add(ksDocumentPart, False) создаёт пустую деталь без имени.
+        Только такие документы можно закрыть без сохранения через close_document.
+        """
+        with com_errors("создание документа"):
+            doc = self.app7.Documents.Add(doc_type, visible)
+        self._created.append(doc)
+        return doc
+
+    def close_document(self, doc, save: bool = False) -> None:
+        """Закрыть документ, созданный через new_document (по умолчанию БЕЗ сохранения).
+
+        Документы пользователя так закрывать нельзя: закрытие без сохранения выбросило бы его правки.
+        Значения DocumentCloseOptions (API7): kdDoNotSaveChanges = 0, kdSaveChanges = 1.
+        """
+        if not any(doc is d for d in self._created):
+            raise KompasError("Закрывать можно только документы, созданные через new_document: "
+                              "документы пользователя мод не закрывает")
+        with com_errors("закрытие документа"):
+            doc.Close(1 if save else 0)
+        self._created[:] = [d for d in self._created if d is not doc]
 
     def save_as(self, session, doc, path: str | Path) -> None:
         """Сохранить документ в новый файл: ЕДИНСТВЕННЫЙ разрешённый для модов способ.
@@ -164,6 +225,22 @@ class Kompas:
         self.api5.ksMessage(text)
 
 
+def force_late_binding() -> None:
+    """Запретить pywin32 брать типизированные обёртки из кэша gen_py, если он есть на компьютере.
+
+    Проверено на КОМПАС v24: при наличии кэша дочерние объекты (документы и т.п.) приходили типизированными
+    (win32com.gen_py...IKompasDocument), без кэша динамическими (CDispatch). Кэш появляется на машине от
+    любых других скриптов для КОМПАСа, поэтому без этого поведение модов зависело бы от посторонних
+    программ. Пустой путь пакета gen_py делает импорт обёрток невозможным, и pywin32 использует позднее
+    связывание всегда одинаково.
+    """
+    try:
+        import win32com.gen_py as gen_py
+    except ImportError:
+        return
+    gen_py.__path__ = []
+
+
 def connect(launch: bool = False) -> Kompas:
     """Подключиться к КОМПАСу.
 
@@ -180,6 +257,7 @@ def connect(launch: bool = False) -> Kompas:
         from win32com.client import dynamic
     except ImportError as e:  # не Windows или нет pywin32
         raise KompasNotAvailable("нужен Windows и пакет pywin32 (pip install pywin32)") from e
+    force_late_binding()
 
     launched = False
 

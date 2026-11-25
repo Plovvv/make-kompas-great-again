@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from mkga.core.kompas import Kompas, KompasNotAvailable, connect
+from mkga.core.kompas import Kompas, KompasNotAvailable, connect, force_late_binding, out_ints
 from mkga.runner import ModContext, run_mod_dir
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -113,3 +113,75 @@ class RunDirTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Api5OutParamsTests(unittest.TestCase):
+    def test_api5_version_matches_api7_version_on_fake(self):
+        from mkga.core.fake import make_fake_kompas
+        for version in ((24, 0, 3, 0), (25, 1, 2, 3)):
+            k = make_fake_kompas(version=version)
+            self.assertEqual(k.api5_version, version)
+            self.assertEqual(k.api5_version, k.version)
+
+    def test_out_ints_without_pywin32_gives_plain_holders(self):
+        hidden = {"pythoncom": None, "win32com": None, "win32com.client": None}
+        with mock.patch.dict(sys.modules, hidden):
+            outs = out_ints(3)
+        self.assertEqual([o.value for o in outs], [0, 0, 0])
+
+    def test_out_ints_with_pywin32_gives_byref_variants(self):
+        try:
+            import pythoncom  # noqa: F401
+        except ImportError:
+            self.skipTest("нужен pywin32")
+        outs = out_ints(2)
+        self.assertEqual(len(outs), 2)
+        outs[0].value = 24  # VARIANT по ссылке принимает значение
+
+
+class LateBindingTests(unittest.TestCase):
+    def test_gen_py_cache_is_disabled_in_a_clean_process(self):
+        import subprocess
+        try:
+            import win32com.gen_py  # noqa: F401
+        except ImportError:
+            self.skipTest("нужен pywin32")
+        code = ("from mkga.core.kompas import force_late_binding; import win32com.gen_py as g;"
+                "force_late_binding(); force_late_binding(); print(list(g.__path__))")
+        r = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip(), "[]")  # импорт типизированных обёрток из кэша невозможен
+
+    def test_force_late_binding_is_safe_without_pywin32(self):
+        with mock.patch.dict(sys.modules, {"win32com": None, "win32com.gen_py": None}):
+            force_late_binding()  # не падает
+
+
+class DocumentLifecycleTests(unittest.TestCase):
+    def test_new_document_can_be_closed_without_saving(self):
+        from mkga.core import constants as C
+        from mkga.core.fake import make_fake_kompas
+        k = make_fake_kompas()
+        before = k.app7.Documents.Count
+        doc = k.new_document(C.ksDocumentPart, visible=False)
+        self.assertEqual((k.app7.Documents.Count, doc.DocumentType, doc.Name), (before + 1, C.ksDocumentPart, ""))
+        k.close_document(doc)
+        self.assertEqual(k.app7.Documents.Count, before)
+        self.assertEqual(doc.closed_with, 0)            # kdDoNotSaveChanges
+
+    def test_close_with_save_uses_save_option(self):
+        from mkga.core.fake import make_fake_kompas
+        k = make_fake_kompas()
+        doc = k.new_document(4)
+        k.close_document(doc, save=True)
+        self.assertEqual(doc.closed_with, 1)            # kdSaveChanges
+
+    def test_users_documents_cannot_be_closed_by_a_mod(self):
+        from mkga.core.fake import FakeDocument, make_fake_kompas
+        from mkga.core.kompas import KompasError
+        users = FakeDocument("Чертёж пользователя.cdw")
+        k = make_fake_kompas(documents=[users])
+        with self.assertRaises(KompasError):
+            k.close_document(users)
+        self.assertEqual(k.app7.Documents.Count, 1)     # не закрыт, правки не потеряны
+        self.assertIsNone(users.closed_with)

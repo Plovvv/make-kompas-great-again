@@ -22,9 +22,12 @@ class FakeDocument:
 
     def __init__(self, name: str = "Документ1.m3d", path: str | Path | None = None):
         self.Name = name
+        self.DocumentType = 4  # ksDocumentPart
         self.Path = str(path) if path else ""
         self.saved_to: list[str] = []
         self.save_result = True  # False: имитировать отказ КОМПАСа
+        self.closed_with: int | None = None
+        self._owner: list | None = None  # список документов приложения (для Close)
 
     def SaveAs(self, file_name: str) -> bool:
         if not self.save_result:
@@ -36,6 +39,33 @@ class FakeDocument:
     def Save(self) -> bool:
         return self.SaveAs(self.Path) if self.Path else False
 
+    def Close(self, close_options: int) -> bool:
+        self.closed_with = close_options   # 0 = не сохранять, 1 = сохранить (DocumentCloseOptions)
+        if self._owner is not None:
+            self._owner.remove(self)
+        return True
+
+
+class FakeDocuments:
+    """Коллекция Documents: Count, Item, Add (как на реальном КОМПАСе v24)."""
+
+    def __init__(self, docs: list[FakeDocument]):
+        self._docs = docs
+
+    @property
+    def Count(self) -> int:
+        return len(self._docs)
+
+    def Item(self, index: int) -> FakeDocument:
+        return self._docs[index]
+
+    def Add(self, doc_type: int, visible: bool = True) -> FakeDocument:
+        doc = FakeDocument("")           # новый документ без имени, как в настоящем КОМПАСе
+        doc.DocumentType = doc_type
+        doc._owner = self._docs
+        self._docs.append(doc)
+        return doc
+
 
 class FakeApp7:
     """IApplication: только то, что подтверждено на реальном КОМПАСе v24."""
@@ -43,6 +73,9 @@ class FakeApp7:
     def __init__(self, version: tuple[int, int, int, int], documents: list[FakeDocument]):
         self._version = version
         self.documents = documents
+        self.Documents = FakeDocuments(documents)
+        for d in documents:
+            d._owner = documents
         self.active: FakeDocument | None = documents[0] if documents else None
         self.Visible = True
 
@@ -60,8 +93,10 @@ class FakeApp7:
 class _Recorder:
     """Заглушка API5: запоминает вызовы ksMessage и т.п. Остальное не подтверждено, не выдумываем."""
 
-    def __init__(self, study: bool = False, home: bool = False, spds: bool = False) -> None:
+    def __init__(self, study: bool = False, home: bool = False, spds: bool = False,
+                 version: tuple[int, int, int, int] = (24, 0, 3, 0)) -> None:
         self.messages: list[str] = []
+        self._version = version
         # свойства редакции (на реальном КОМПАСе это свойства API5, не методы)
         self.ksIsStudyVersion = study
         self.ksIsHomeVersion = home
@@ -69,6 +104,12 @@ class _Recorder:
 
     def ksMessage(self, text: str) -> None:
         self.messages.append(text)
+
+    def ksGetSystemVersion(self, *outs) -> int:
+        """Как настоящий метод API5: пишет версию в выходные параметры (.value), возвращает код результата."""
+        for out, value in zip(outs, self._version):
+            out.value = value
+        return 1
 
 
 def make_fake_kompas(
@@ -80,4 +121,4 @@ def make_fake_kompas(
     docs = list(documents or [])
     app7: Any = FakeApp7(version, docs)
     api7 = type("FakeApi7", (), {"Application": app7})()
-    return Kompas(api5=_Recorder(study=study, home=home), api7=api7, app7=app7)
+    return Kompas(api5=_Recorder(study=study, home=home, version=version), api7=api7, app7=app7)
