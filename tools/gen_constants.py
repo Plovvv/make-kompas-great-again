@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from mkga.core.typelib import read_enum_constants  # noqa: E402
+from mkga.core.typelib import read_enum_constants, read_enums  # noqa: E402
 
 OUT = ROOT / "mkga" / "core" / "constants.py"
 
@@ -47,9 +47,24 @@ GROUPS: list[tuple[str, list[str]]] = [
     ("Исполнения КОМПАСа (ksKompas*): назначение значений ещё не проверено", [r"ksKompas[A-Z][A-Za-z0-9]*"]),
 ]
 
+
+# Константы 3D-моделирования из библиотеки Kompas6Constants3D (ksConstants3D.tlb): плоскости, оси, типы
+# операций, направление и окончание выдавливания, тип вращения. Нужны mkga.core.model3d.
+GROUPS_3D: list[tuple[str, list[str]]] = [
+    ("3D: плоскости и оси детали по умолчанию", [r"o3d_plane(XOY|XOZ|YOZ)", r"o3d_axis(OX|OY|OZ)"]),
+    ("3D: типы объектов и операций", [
+        r"o3d_(sketch|part|baseExtrusion|bossExtrusion|cutExtrusion|baseRotated|bossRotated|cutRotated|cutBySketch)",
+    ]),
+    ("3D: направление выдавливания (ksDirectionTypeEnum)", [r"dt(Normal|Reverse|Both|MiddlePlane)"]),
+    ("3D: тип окончания выдавливания (ksEndTypeEnum)", [
+        r"et(Blind|ThroughAll|UpToVertexTo|UpToVertexFrom|UpToSurfaceTo|UpToSurfaceFrom|UpToNearSurface)"]),
+    ("3D: тип вращения (ksRotatedTypeEnum)", [r"ksRT(Angle|Vertex|Surface)"]),
+]
+
 HEADER = '''"""Константы КОМПАС-3D, нужные модам. СГЕНЕРИРОВАНО `python tools/gen_constants.py`, вручную не править.
 
-Источник: библиотека типов Kompas6Constants (ksConstants.tlb) из КОМПАС-3D v{version}. Это малая часть
+Источник: библиотеки типов Kompas6Constants (ksConstants.tlb) и Kompas6Constants3D (ksConstants3D.tlb)
+из КОМПАС-3D v{version}. Это малая часть
 всех констант КОМПАСа (отобрана группами в tools/gen_constants.py, с запасом). Имена совпадают с
 именами в справке и примерах КОМПАСа, поэтому код читается рядом с документацией:
 
@@ -63,15 +78,33 @@ HEADER = '''"""Константы КОМПАС-3D, нужные модам. СГ
 '''
 
 
-def select(all_consts: dict[str, int]) -> list[tuple[str, list[tuple[str, int]]]]:
-    chosen: set[str] = set()
+def flat_3d() -> dict[str, int]:
+    """Все константы 3D-библиотеки одним словарём (имена перечислений не нужны)."""
+    out: dict[str, int] = {}
+    for members in read_enums().values():
+        out.update(members)
+    return out
+
+
+def select(all_consts: dict[str, int], groups=None, taken: set[str] | None = None):
+    chosen: set[str] = set(taken or ())
     out = []
-    for title, patterns in GROUPS:
+    for title, patterns in (GROUPS if groups is None else groups):
         rx = [re.compile(p) for p in patterns]
         names = sorted(n for n in all_consts if n not in chosen and any(r.fullmatch(n) for r in rx))
         chosen.update(names)
         out.append((title, [(n, all_consts[n]) for n in names]))
     return out
+
+
+def select_all() -> list:
+    """Группы из ksConstants и из 3D-библиотеки (имена в них не пересекаются)."""
+    first = select(read_enum_constants())
+    taken = {n for _, items in first for n, _ in items}
+    second = select(flat_3d(), GROUPS_3D, taken)
+    overlap = taken & {n for _, items in second for n, _ in items}
+    assert not overlap, f"одинаковые имена в двух библиотеках: {sorted(overlap)}"
+    return first + second
 
 
 def render(groups, version: str) -> str:
@@ -92,8 +125,7 @@ def render(groups, version: str) -> str:
 
 
 def main(argv: list[str]) -> int:
-    consts = read_enum_constants()
-    groups = select(consts)
+    groups = select_all()
     empty = [t for t, items in groups if not items]
     if empty:
         print("В группах нет ни одной константы (шаблон устарел?):", *empty, sep="\n  ", file=sys.stderr)

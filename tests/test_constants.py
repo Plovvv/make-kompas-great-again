@@ -34,7 +34,10 @@ class ConstantsModuleTests(unittest.TestCase):
 @unittest.skipUnless(typelib_available(), "нужен Windows с установленным КОМПАСом (библиотека типов Kompas6Constants)")
 class ConstantsMatchTypelibTests(unittest.TestCase):
     def test_every_constant_matches_installed_kompas(self):
-        lib = read_enum_constants()
+        from mkga.core.typelib import read_enums
+        lib = dict(read_enum_constants())
+        for members in read_enums().values():          # 3D-константы: библиотека Kompas6Constants3D
+            lib.update(members)
         wrong = {n: (v, lib.get(n)) for n, v in C.ALL.items() if lib.get(n) != v}
         self.assertEqual(wrong, {}, "расхождения (в файле, в КОМПАСе); возможно, другая версия КОМПАСа")
 

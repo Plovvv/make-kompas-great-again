@@ -23,11 +23,18 @@ class FakeDocument:
     def __init__(self, name: str = "Документ1.m3d", path: str | Path | None = None):
         self.Name = name
         self.DocumentType = 4  # ksDocumentPart
+        self._top: FakePart7 | None = None
         self.Path = str(path) if path else ""
         self.saved_to: list[str] = []
         self.save_result = True  # False: имитировать отказ КОМПАСа
         self.closed_with: int | None = None
         self._owner: list | None = None  # список документов приложения (для Close)
+
+    @property
+    def TopPart(self) -> FakePart7:
+        if self._top is None:
+            self._top = FakePart7()
+        return self._top
 
     def SaveAs(self, file_name: str) -> bool:
         if not self.save_result:
@@ -44,6 +51,104 @@ class FakeDocument:
         if self._owner is not None:
             self._owner.remove(self)
         return True
+
+
+class FakeShape:
+    """Объект эскиза или операции 3D: любые свойства записываются как атрибуты, вызовы запоминаются."""
+
+    def __init__(self, kind: str, args: tuple = (), update_result: bool = True):
+        self.kind, self.args, self.update_result = kind, args, update_result
+        self.calls: list = []
+
+    def Update(self) -> bool:
+        self.calls.append("Update")
+        return self.update_result
+
+    def SetSideParameters(self, *args) -> bool:
+        self.calls.append(("SetSideParameters", args))
+        return True
+
+    def _put_indexed_(self, name: str, *args) -> None:  # запись индексируемых свойств (см. model3d._put_indexed)
+        self.calls.append(("put", name, args))
+
+
+class FakeAdd:
+    """Коллекция с методом Add (Circles, LineSegments, Extrusions и т. п.)."""
+
+    def __init__(self, kind: str, owner: "FakePart7"):
+        self.kind, self.owner = kind, owner
+
+    def Add(self, *args) -> FakeShape:
+        shape = FakeShape(self.kind, args, self.owner.update_result)
+        self.owner.created.append(shape)
+        return shape
+
+
+class FakeView:
+    def __init__(self, owner: "FakePart7"):
+        self.Circles = FakeAdd("circle", owner)
+        self.LineSegments = FakeAdd("line", owner)
+
+
+class FakeSketch(FakeShape):
+    def __init__(self, owner: "FakePart7"):
+        super().__init__("sketch", (), owner.update_result)
+        self.view, self.began, self.ended = FakeView(owner), False, False
+
+    def BeginEdit(self):
+        self.began = True
+        views = type("Views", (), {"ActiveView": self.view})()
+        return type("Fragment", (), {"ViewsAndLayersManager": type("M", (), {"Views": views})()})()
+
+    def EndEdit(self) -> bool:
+        self.ended = True
+        return True
+
+
+class _SketchCollection:
+    def __init__(self, owner: "FakePart7"):
+        self.owner = owner
+
+    def Add(self) -> FakeSketch:
+        sketch = FakeSketch(self.owner)
+        self.owner.sketches.append(sketch)
+        self.owner.created.append(sketch)
+        return sketch
+
+
+class FakePart7:
+    """IPart7 без геометрии: записывает построение, а массу и плотность задаёт тест (fake_mass_g, Density)."""
+
+    def __init__(self) -> None:
+        self.created: list[FakeShape] = []
+        self.sketches: list[FakeSketch] = []
+        self.update_result = True      # False: имитировать отказ КОМПАСа построить операцию
+        self.Name, self.Marking = "", ""
+        self.Material, self.Density = "Сталь 10 ГОСТ 1050-2013", 7.856
+        self.fake_mass_g = 0.0
+        self.material_accepted = True
+        self.Sketchs = _SketchCollection(self)
+        self.Extrusions = FakeAdd("extrusion", self)
+        self.Rotateds = FakeAdd("rotated", self)
+
+    def DefaultObject(self, object_type: int):
+        return ("default-object", object_type)
+
+    def SetMaterial(self, name: str, density: float) -> bool:
+        if not self.material_accepted:
+            return False
+        self.Material, self.Density = name, density
+        return True
+
+    def Update(self) -> bool:
+        return False                   # как на реальном КОМПАСе: после успешного пересчёта бывает False
+
+    @property
+    def Mass(self) -> float:
+        return self.fake_mass_g
+
+    def features(self, kind: str) -> list[FakeShape]:
+        return [s for s in self.created if s.kind == kind]
 
 
 class FakeDocuments:

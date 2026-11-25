@@ -1,6 +1,7 @@
 """Константы КОМПАС-3D, нужные модам. СГЕНЕРИРОВАНО `python tools/gen_constants.py`, вручную не править.
 
-Источник: библиотека типов Kompas6Constants (ksConstants.tlb) из КОМПАС-3D v24. Это малая часть
+Источник: библиотеки типов Kompas6Constants (ksConstants.tlb) и Kompas6Constants3D (ksConstants3D.tlb)
+из КОМПАС-3D v24. Это малая часть
 всех констант КОМПАСа (отобрана группами в tools/gen_constants.py, с запасом). Имена совпадают с
 именами в справке и примерах КОМПАСа, поэтому код читается рядом с документацией:
 
@@ -210,6 +211,45 @@ ksKompasStudy = 8192
 ksKompasText = 4
 ksKompasViewer = 2
 
+# --- 3D: плоскости и оси детали по умолчанию (6) ---------------------
+o3d_axisOX = 71
+o3d_axisOY = 72
+o3d_axisOZ = 73
+o3d_planeXOY = 1
+o3d_planeXOZ = 2
+o3d_planeYOZ = 3
+
+# --- 3D: типы объектов и операций (9) --------------------------------
+o3d_baseExtrusion = 24
+o3d_baseRotated = 27
+o3d_bossExtrusion = 25
+o3d_bossRotated = 28
+o3d_cutBySketch = 51
+o3d_cutExtrusion = 26
+o3d_cutRotated = 29
+o3d_part = 104
+o3d_sketch = 5
+
+# --- 3D: направление выдавливания (ksDirectionTypeEnum) (4) ----------
+dtBoth = 2
+dtMiddlePlane = 3
+dtNormal = 0
+dtReverse = 1
+
+# --- 3D: тип окончания выдавливания (ksEndTypeEnum) (7) --------------
+etBlind = 0
+etThroughAll = 1
+etUpToNearSurface = 6
+etUpToSurfaceFrom = 5
+etUpToSurfaceTo = 4
+etUpToVertexFrom = 3
+etUpToVertexTo = 2
+
+# --- 3D: тип вращения (ksRotatedTypeEnum) (3) ------------------------
+ksRTAngle = 0
+ksRTSurface = 2
+ksRTVertex = 1
+
 # Все константы одним словарём (для проверок и поиска по значению).
 ALL = {
     "ksDocumentAssembly": ksDocumentAssembly,
@@ -394,4 +434,33 @@ ALL = {
     "ksKompasStudy": ksKompasStudy,
     "ksKompasText": ksKompasText,
     "ksKompasViewer": ksKompasViewer,
+    "o3d_axisOX": o3d_axisOX,
+    "o3d_axisOY": o3d_axisOY,
+    "o3d_axisOZ": o3d_axisOZ,
+    "o3d_planeXOY": o3d_planeXOY,
+    "o3d_planeXOZ": o3d_planeXOZ,
+    "o3d_planeYOZ": o3d_planeYOZ,
+    "o3d_baseExtrusion": o3d_baseExtrusion,
+    "o3d_baseRotated": o3d_baseRotated,
+    "o3d_bossExtrusion": o3d_bossExtrusion,
+    "o3d_bossRotated": o3d_bossRotated,
+    "o3d_cutBySketch": o3d_cutBySketch,
+    "o3d_cutExtrusion": o3d_cutExtrusion,
+    "o3d_cutRotated": o3d_cutRotated,
+    "o3d_part": o3d_part,
+    "o3d_sketch": o3d_sketch,
+    "dtBoth": dtBoth,
+    "dtMiddlePlane": dtMiddlePlane,
+    "dtNormal": dtNormal,
+    "dtReverse": dtReverse,
+    "etBlind": etBlind,
+    "etThroughAll": etThroughAll,
+    "etUpToNearSurface": etUpToNearSurface,
+    "etUpToSurfaceFrom": etUpToSurfaceFrom,
+    "etUpToSurfaceTo": etUpToSurfaceTo,
+    "etUpToVertexFrom": etUpToVertexFrom,
+    "etUpToVertexTo": etUpToVertexTo,
+    "ksRTAngle": ksRTAngle,
+    "ksRTSurface": ksRTSurface,
+    "ksRTVertex": ksRTVertex,
 }
