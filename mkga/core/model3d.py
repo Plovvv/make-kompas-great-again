@@ -37,7 +37,7 @@ LINE_MAIN = 1  # стиль «основная линия» (проверено)
 PROP_TITLE = 5          # свойство документа «Наименование»
 PROP_OBJECT_TYPE = 14   # свойство документа «Тип объекта» (Деталь, Стандартное изделие, ...)
 SPEC_STYLE_DEFAULT = 1  # стиль спецификации по умолчанию (проверено на v24)
-SPEC_STANDARD, SPEC_OTHER = 35, 40   # номера разделов: «Стандартные изделия», «Прочие изделия»
+SPEC_STANDARD, SPEC_OTHER = 25, 30   # номера разделов стиля спецификации: «Стандартные изделия», «Прочие изделия»
 
 
 class ModelError(KompasError):
@@ -304,16 +304,38 @@ class Part:
         self._doc_property(PROP_OBJECT_TYPE, text)
 
     def add_spec_object(self, section: int) -> None:
-        """Объект спецификации детали в раздел `section` (например 40 = «Прочие изделия», 35 = «Стандартные изделия»).
+        """Объект спецификации детали в раздел `section` (25 «Стандартные изделия», 30 «Прочие изделия», 20 «Детали», ...).
 
-        Проверено на v24: создаётся и сохраняется в файле детали. Как раздел отображается в спецификации СБОРКИ,
-        на живой сборке пока не проверялось.
+        ЭТО И ЕСТЬ способ задать раздел: проверено на v24, что деталь с таким объектом попадает в спецификации СБОРКИ в
+        указанный раздел. Номера разделов берутся из стиля спецификации (`SpecificationStyle.Sections`: Документация 5,
+        Комплексы 10, Сборочные единицы 15, Детали 20, Стандартные изделия 25, Прочие изделия 30, Материалы 35,
+        Комплекты 40). Тип объекта («Стандартное изделие») и свойство SPCSection раздел в сборке НЕ определяют.
         """
         with com_errors("объект спецификации"):
             description = self.doc.SpecificationDescriptions.Add("", SPEC_STYLE_DEFAULT, "")
             obj = description.BaseObjects.Add(int(section), 1.0)
             obj.IncludeGeometry(self.top, True)
             obj.Update()
+
+    def set_spec_section_property(self, section: int, subsection: int = 0) -> None:
+        """Записать свойство документа SPCSection (раздел и подраздел) в хранилище свойств детали.
+
+        Так хранит раздел сам КОМПАС; свойство становится «сложным» (`IsComplexPropertyValue`) и остаётся в файле
+        (проверено на v24). На раздел в спецификации сборки оно не влияет: для этого нужен `add_spec_object`.
+        """
+        import re
+
+        with com_errors("свойство SPCSection"):
+            xml = com_iface.get(self.doc, "IPropertyKeeper", "Properties")
+            xml = re.sub(r'\s*<property id="SPCSection"[^>]*?(?:/>|>.*?</property>)', "", xml, flags=re.S)
+            entry = ('\t<property id="SPCSection" value="%d" type="int">\n\t\t<property id="subSectionNumb" value="%d" '
+                     'type="int" />\n\t</property>\n') % (int(section), int(subsection))
+            com_iface.put(self.doc, "IPropertyKeeper", "Properties", xml.replace("</infObject>", entry + "</infObject>"))
+
+    def set_spec_section(self, section: int) -> None:
+        """Раздел спецификации детали: объект спецификации (определяет раздел в сборке) и свойство SPCSection (в свойствах)."""
+        self.add_spec_object(section)
+        self.set_spec_section_property(section)
 
     # --- грани и резьба ---------------------------------------------------------------------------------
     def faces(self) -> list:

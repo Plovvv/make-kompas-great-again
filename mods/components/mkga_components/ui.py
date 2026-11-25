@@ -1,4 +1,4 @@
-"""Окно мода «Метизы и фитинги»: дерево стандартов, параметры, 2D-чертёж, имя детали и создание.
+"""Окно мода «Каталог комплектующих»: дерево стандартов, параметры, 2D-чертёж, имя детали и создание.
 
 Слева каталог (папки и стандарты) с поиском, посередине параметры выбранного стандарта (выпадающие списки
 типоразмера, длины и класса прочности, таблица размеров с расшифровкой букв), справа упрощённый чертёж, снизу
@@ -28,10 +28,10 @@ def default_folder() -> Path:
     return docs if docs.is_dir() else Path.home()
 
 
-class FastenersWindow(WindowBase):
+class ComponentsWindow(WindowBase):
     def __init__(self, ctx, catalog: Catalog, *, version: str = "", palette: Palette = LIGHT,
                  user_dir: Path | None = None, builtin_dir: Path | None = None):
-        super().__init__(ctx, "Метизы и фитинги: MKGA (неофициальный)", size=(1260, 800), min_size=(1020, 640),
+        super().__init__(ctx, "Каталог комплектующих: MKGA (неофициальный)", size=(1260, 800), min_size=(1020, 640),
                          palette=palette)
         self.catalog = catalog
         self.user_dir = user_dir
@@ -71,7 +71,7 @@ class FastenersWindow(WindowBase):
         header = ttk.Frame(root, padding=(t.pad, t.pad_small, t.pad, 0))
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(2, weight=1)
-        ttk.Label(header, text="Метизы и фитинги", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(header, text="Каталог комплектующих", style="Title.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(header, text=f"версия {self.version}" if self.version else "", style="Small.Muted.TLabel"
                   ).grid(row=0, column=1, sticky="sw", padx=(t.pad_small, 0), pady=(0, t.px(6)))
         pill, check = self.build_kompas_pill(header)
@@ -461,5 +461,5 @@ class FastenersWindow(WindowBase):
 
 def run_app(ctx, catalog: Catalog, *, version: str = "", user_dir: Path | None = None,
             builtin_dir: Path | None = None) -> None:
-    win = FastenersWindow(ctx, catalog, version=version, user_dir=user_dir, builtin_dir=builtin_dir)
+    win = ComponentsWindow(ctx, catalog, version=version, user_dir=user_dir, builtin_dir=builtin_dir)
     win.mainloop()

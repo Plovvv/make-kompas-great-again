@@ -281,9 +281,10 @@ def _csk_build(part, dims, length):
 
 
 # --- винт с полукруглой головкой и шестигранным углублением (ISO 7380-1) -------------------------------------------
-def _dome_radius(dims: Mapping[str, float]) -> float:
-    """Радиус сферы головки: шаровой сегмент высотой k с основанием диаметром dk."""
-    return ((dims["dk"] / 2) ** 2 + dims["k"] ** 2) / (2.0 * dims["k"])
+def _dome_radius(dims: Mapping[str, float], height: float | None = None) -> float:
+    """Радиус сферы головки: шаровой сегмент высотой `height` (по умолчанию k) с основанием диаметром dk."""
+    h = dims["k"] if height is None else height
+    return ((dims["dk"] / 2) ** 2 + h ** 2) / (2.0 * h)
 
 
 def _button_tail(dims: Mapping[str, float], length: float) -> list[Point]:
@@ -367,23 +368,131 @@ def _button_build(part, dims, length):
     part.thread(d / 2, None if b is None or b >= length else b, start_near=tip)
 
 
-# --- шайба пружинная (DIN 127 B): упрощённо плоское кольцо без разреза ---------------------------------------------
+# --- винт с полукруглой головкой и фланцем (ISO 7380-2) -----------------------------------------------------------------
+def _flange_height(dims: Mapping[str, float]) -> float:
+    """Высота купола: общая высота головки k минус толщина фланца c."""
+    return dims["k"] - dims["c"]
+
+
+def _flange_check(dims, length):
+    _need(dims, ("d", "P", "dk", "dc", "k", "c", "s", "t"), "винт с фланцем")
+    _positive(dims, ("d", "P", "dk", "dc", "k", "c", "s", "t"))
+    if length is None or length <= dims["P"]:
+        raise ShapeError("длина винта должна быть больше шага резьбы")
+    if dims["dc"] <= dims["dk"] or dims["c"] >= dims["k"]:
+        raise ShapeError("размеры фланца не согласованы: dc должен быть больше dk, c меньше k")
+    h = _flange_height(dims)
+    corner = dims["s"] / math.sqrt(3.0)
+    r = _dome_radius(dims, h)
+    if corner >= dims["dk"] / 2:
+        raise ShapeError("шестигранное углубление не помещается в головку")
+    if r - math.sqrt(r * r - corner * corner) >= dims["t"]:
+        raise ShapeError("глубина углубления меньше провала купола у его углов")
+    if dims["t"] > dims["k"] and corner >= dims["d"] / 2:
+        raise ShapeError("углубление выходит за пределы стержня")
+
+
+def _flange_tail(dims: Mapping[str, float], length: float) -> list[Point]:
+    """Профиль ниже основания купола (y = -(k - c)): фланец, стержень, фаска на конце."""
+    d, p, dk, dc, k, c = (dims[x] for x in ("d", "P", "dk", "dc", "k", "c"))
+    base = -(k - c)
+    return [(0.0, base), (dc / 2, base), (dc / 2, -k), (d / 2, -k), (d / 2, -(k + length - p)),
+            (d / 2 - p, -(k + length)), (0.0, -(k + length))]
+
+
+def _flange_volume(dims, length):
+    h = _flange_height(dims)
+    cap = math.pi * h * (3 * (dims["dk"] / 2) ** 2 + h ** 2) / 6.0
+    pocket = hexagon_area(dims["s"]) * dims["t"] - dome_pocket_correction(dims["s"], _dome_radius(dims, h))
+    return cap + revolved_volume(_flange_tail(dims, length)) - pocket
+
+
+def _flange_planar_area(dims, length) -> float:
+    """Плоские грани: дно углубления, шесть стенок под куполом, верх и низ фланца, торец стержня."""
+    s_, t, d, p, dk, dc = dims["s"], dims["t"], dims["d"], dims["P"], dims["dk"], dims["dc"]
+    r = _dome_radius(dims, _flange_height(dims))
+    a = s_ / 2.0
+    side = s_ / math.sqrt(3.0)
+    c_ = math.sqrt(r * r - a * a)
+
+    def prim(u: float) -> float:
+        return 0.5 * (u * math.sqrt(c_ * c_ - u * u) + c_ * c_ * math.asin(u / c_))
+
+    wall = t * side - (r * side - 2.0 * prim(side / 2.0))
+    return (hexagon_area(s_) + 6.0 * wall + math.pi * (dc ** 2 - dk ** 2) / 4.0 + math.pi * (dc ** 2 - d ** 2) / 4.0
+            + math.pi * (d / 2.0 - p) ** 2)
+
+
+def _flange_verify(part, dims, length):
+    part.verify_planar_area(_flange_planar_area(dims, length), 1e-4)
+
+
+def _flange_build(part, dims, length):
+    d, p, dk, dc, k, c = (dims[x] for x in ("d", "P", "dk", "dc", "k", "c"))
+    h = _flange_height(dims)
+    r = _dome_radius(dims, h)
+    rim_angle = math.degrees(math.atan2(r - h, dk / 2))
+    with part.sketch("XOY") as sk:
+        sk.arc(0.0, -r, r, rim_angle, 90.0)                       # купол от кромки к вершине
+        sk.polyline([(0.0, 0.0), (0.0, -(k + length)), (d / 2 - p, -(k + length)), (d / 2, -(k + length - p)),
+                     (d / 2, -k), (dc / 2, -k), (dc / 2, -h), (dk / 2, -h)], closed=False)
+    part.revolve(sk, axis="OY")
+    with part.sketch("XOZ") as pocket:
+        pocket.regular_polygon(6, across_flats=dims["s"])
+    part.cut_extrude(pocket, dims["t"], direction="both")
+    b = dims.get("b")
+    tip = (d / 2, -(k + length - p), 0.0)
+    part.thread(d / 2, None if b is None or b >= length else b, start_near=tip)
+
+
+# --- шайба пружинная (DIN 127 B): кольцо с разрывом ---------------------------------------------------------------------
 def spring_washer_dims(dims: Mapping[str, float]) -> dict[str, float]:
-    """Размеры плоского кольца: d2 = d1 + 2·b (ширина b по радиусу), толщина s."""
-    return {"d1": dims["d1"], "d2": dims["d1"] + 2.0 * dims["b"], "h": dims["s"]}
+    """Размеры кольца: d2 = d1 + 2·b (ширина b по радиусу), толщина s, ширина разрыва = s (условно)."""
+    return {"d1": dims["d1"], "d2": dims["d1"] + 2.0 * dims["b"], "h": dims["s"], "gap": dims["s"]}
+
+
+def _strip_area(r_in: float, r_out: float, gap: float) -> float:
+    """Площадь части кольца в полосе |z| < gap/2 при x > 0 (то, что вырезает разрыв)."""
+    half = gap / 2.0
+
+    def prim(r: float, z: float) -> float:        # первообразная sqrt(r^2 - z^2)
+        return 0.5 * (z * math.sqrt(r * r - z * z) + r * r * math.asin(z / r))
+
+    return 2.0 * (prim(r_out, half) - prim(r_in, half))
 
 
 def _spring_check(dims, length):
     _need(dims, ("d1", "b", "s"), "пружинная шайба")
     _positive(dims, ("d1", "b", "s"))
+    if dims["s"] >= dims["d1"]:
+        raise ShapeError("разрыв шайбы шире её отверстия")
 
 
 def _spring_volume(dims, length):
-    return _washer_volume(spring_washer_dims(dims), None)
+    w = spring_washer_dims(dims)
+    r_in, r_out = w["d1"] / 2, w["d2"] / 2
+    return (math.pi * (r_out ** 2 - r_in ** 2) - _strip_area(r_in, r_out, w["gap"])) * w["h"]
+
+
+def _spring_planar_area(dims) -> float:
+    w = spring_washer_dims(dims)
+    r_in, r_out, half = w["d1"] / 2, w["d2"] / 2, w["gap"] / 2
+    faces = 2.0 * (math.pi * (r_out ** 2 - r_in ** 2) - _strip_area(r_in, r_out, w["gap"]))   # верх и низ
+    faces += 2.0 * w["h"] * (math.sqrt(r_out ** 2 - half ** 2) - math.sqrt(r_in ** 2 - half ** 2))   # торцы разрыва
+    return faces
+
+
+def _spring_verify(part, dims, length):
+    part.verify_planar_area(_spring_planar_area(dims), 1e-6)
 
 
 def _spring_build(part, dims, length):
-    _washer_build(part, spring_washer_dims(dims), None)
+    w = spring_washer_dims(dims)
+    _washer_build(part, w, None)
+    r_out = w["d2"] / 2
+    with part.sketch("XOZ") as slit:
+        slit.rect(w["d1"] / 2 - 1.0, -w["gap"] / 2.0, r_out - w["d1"] / 2 + 2.0, w["gap"])   # полоса через кольцо при x > 0
+    part.cut_extrude(slit, direction="both")                                                 # сквозная по высоте
 
 
 SHAPES: dict[str, Shape] = {
@@ -397,8 +506,11 @@ SHAPES: dict[str, Shape] = {
     "button_screw": Shape("button_screw", "Винт с полукруглой головкой и шестигранным углублением",
                           ("d", "P", "dk", "k", "s", "t"), True, "external", _button_check, _button_volume,
                           _button_build, volume_tol=2e-3, verify=_button_verify),
-    "washer_spring": Shape("washer_spring", "Пружинная шайба (плоское кольцо без разреза)", ("d1", "b", "s"), False, "",
-                           _spring_check, _spring_volume, _spring_build),
+    "washer_spring": Shape("washer_spring", "Пружинная шайба (кольцо с разрывом, без скручивания)", ("d1", "b", "s"), False,
+                           "", _spring_check, _spring_volume, _spring_build, verify=_spring_verify),
+    "flange_button_screw": Shape("flange_button_screw", "Винт с полукруглой головкой и фланцем и шестигранным углублением",
+                                 ("d", "P", "dk", "dc", "k", "c", "s", "t"), True, "external", _flange_check,
+                                 _flange_volume, _flange_build, volume_tol=2e-3, verify=_flange_verify),
     "nut_hex": Shape("nut_hex", "Шестигранная гайка", ("d", "P", "s", "m", "dw"), False, "internal",
                      _nut_check, _nut_volume, _nut_build, volume_tol=3e-2, verify=_nut_verify),
 }

@@ -66,6 +66,7 @@ class FakeDocument:
         self._owner: list | None = None  # список документов приложения (для Close)
         self.properties: dict[int, object] = {}     # свойства по номеру (5 наименование, 14 тип объекта)
         self.spec_sections: list[int] = []          # разделы созданных объектов спецификации
+        self.properties_xml = '<?xml version="1.0"?>\n<infObject>\n\t<property id="author" value="fake" type="string" />\n</infObject>\n'
         self.SpecificationDescriptions = _FakeSpecDescriptions(self)
 
     @property
@@ -89,6 +90,11 @@ class FakeDocument:
             prop, value = args[0], args[1]
             self.properties[int(prop.Id)] = value
             return True
+        if (iface, member) == ("IPropertyKeeper", "Properties"):
+            if kind == "get":
+                return self.properties_xml
+            self.properties_xml = args[0]
+            return None
         raise NotImplementedError(f"фейк: {iface}.{member}")
 
     def Close(self, close_options: int) -> bool:

@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from mkga.core.model3d import SPEC_OTHER, Part
+from mkga.core.model3d import SPEC_OTHER, SPEC_STANDARD, Part
 
 from .catalog import Standard
 from .shapes import ShapeError
@@ -92,8 +92,9 @@ def create_part(ctx, req: Request) -> Result:
         part.set_title(p.title)
         if std.section == "standard":
             part.set_object_type("Стандартное изделие")
+            part.set_spec_section(SPEC_STANDARD)      # раздел 25: так деталь попадает в «Стандартные изделия» сборки
         else:
-            part.add_spec_object(SPEC_OTHER)
+            part.set_spec_section(SPEC_OTHER)         # раздел 30: «Прочие изделия»
         got = part.verify_volume(expected, shape.volume_tol)
         if shape.verify is not None:
             shape.verify(part, dims, length)

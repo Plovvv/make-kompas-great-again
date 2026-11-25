@@ -1,6 +1,6 @@
-"""Тесты мода «Метизы и фитинги» без КОМПАС: формулы, каталог, имена, чертежи, сборщик на фейке, окно.
+"""Тесты мода «Каталог комплектующих» без КОМПАС: формулы, каталог, имена, чертежи, сборщик на фейке, окно.
 
-Живую проверку построения (объём, резьба, свойства, файлы) делает tests/test_live_fasteners.py.
+Живую проверку построения (объём, резьба, свойства, файлы) делает tests/test_live_components.py.
 """
 
 import gc
@@ -16,7 +16,7 @@ from unittest import mock
 
 from tests.test_ui import display_available
 
-MOD_DIR = Path(__file__).resolve().parent.parent / "mods" / "fasteners"
+MOD_DIR = Path(__file__).resolve().parent.parent / "mods" / "components"
 DATA = MOD_DIR / "data"
 
 
@@ -26,27 +26,27 @@ def setUpModule():
 
 def tearDownModule():
     sys.path.remove(str(MOD_DIR))
-    for name in [n for n in sys.modules if n.startswith("mkga_fasteners")]:
+    for name in [n for n in sys.modules if n.startswith("mkga_components")]:
         del sys.modules[name]
 
 
 def catalog(user=None):
-    from mkga_fasteners.catalog import load_catalog
+    from mkga_components.catalog import load_catalog
     return load_catalog(DATA, user)
 
 
 class ShapeMathTests(unittest.TestCase):
     def test_revolved_volume_of_a_cylinder_and_a_ring(self):
-        from mkga_fasteners.shapes import revolved_volume
+        from mkga_components.shapes import revolved_volume
         self.assertAlmostEqual(revolved_volume([(0, 0), (5, 0), (5, -10), (0, -10)]), math.pi * 25 * 10, places=9)
         self.assertAlmostEqual(revolved_volume([(3, 0), (5, 0), (5, -2), (3, -2)]), math.pi * (25 - 9) * 2, places=9)
 
     def test_hexagon_area(self):
-        from mkga_fasteners.shapes import hexagon_area
+        from mkga_components.shapes import hexagon_area
         self.assertAlmostEqual(hexagon_area(13), 6 * (13 / math.sqrt(3)) ** 2 * math.sqrt(3) / 4, places=9)
 
     def test_chamfer_volume_matches_a_brute_force_grid(self):
-        from mkga_fasteners.shapes import TAN30, hex_chamfer_volume
+        from mkga_components.shapes import TAN30, hex_chamfer_volume
         s, dw = 13.0, 11.3
         n, ext = 500, 7.6                               # чистый Python (numpy в CI нет): сетка 500x500
         step = 2 * ext / n
@@ -62,29 +62,53 @@ class ShapeMathTests(unittest.TestCase):
         self.assertAlmostEqual(hex_chamfer_volume(s, dw), grid, delta=grid * 1.5e-2)
 
     def test_chamfer_that_starts_beyond_the_corners_removes_nothing(self):
-        from mkga_fasteners.shapes import hex_chamfer_volume
+        from mkga_components.shapes import hex_chamfer_volume
         self.assertEqual(hex_chamfer_volume(13, 20), 0.0)
 
     def test_notch_area_integrates_the_hyperbola(self):
-        from mkga_fasteners.shapes import TAN30, hex_flat_notch_area
+        from mkga_components.shapes import TAN30, hex_flat_notch_area
         a, r0, side = 6.5, 5.65, 13 / math.sqrt(3)
         n = 100000
         h = side / n
         brute = sum((math.hypot(a, -side / 2 + (i + 0.5) * h) - r0) * TAN30 * h for i in range(n))
         self.assertAlmostEqual(hex_flat_notch_area(13, 11.3), brute, places=6)
 
+    def test_strip_area_of_the_washer_gap(self):
+        from mkga_components.shapes import _strip_area
+        r1, r2, gap = 4.05, 7.05, 2.0
+        n = 200000
+        h = gap / n
+        brute = sum((math.sqrt(r2 ** 2 - z ** 2) - math.sqrt(r1 ** 2 - z ** 2)) * h
+                    for z in (-gap / 2 + (i + 0.5) * h for i in range(n)))
+        self.assertAlmostEqual(_strip_area(r1, r2, gap), brute, places=6)
+
+    def test_spring_washer_volume_is_the_ring_minus_the_gap(self):
+        from mkga_components.shapes import SHAPES, _strip_area
+        dims = dict(d1=8.1, b=3, s=2)
+        ring = math.pi * ((8.1 / 2 + 3) ** 2 - (8.1 / 2) ** 2) * 2
+        self.assertLess(SHAPES["washer_spring"].volume(dims, None), ring)
+        self.assertAlmostEqual(ring - SHAPES["washer_spring"].volume(dims, None), _strip_area(4.05, 7.05, 2) * 2, places=9)
+
+    def test_flange_screw_rejects_a_flange_smaller_than_the_dome(self):
+        from mkga_components.shapes import SHAPES, ShapeError
+        good = dict(d=8, P=1.25, dk=13.2, dc=17.8, k=4.4, c=1.5, s=5, t=2.6)
+        SHAPES["flange_button_screw"].check(good, 20)
+        for bad in (dict(good, dc=12), dict(good, c=5), dict(good, s=12)):
+            with self.assertRaises(ShapeError):
+                SHAPES["flange_button_screw"].check(bad, 20)
+
     def test_dome_pocket_correction_is_positive_and_small(self):
-        from mkga_fasteners.shapes import dome_pocket_correction
+        from mkga_components.shapes import dome_pocket_correction
         v = dome_pocket_correction(5, 7.768)
         self.assertTrue(0 < v < 10)
         self.assertAlmostEqual(v, 4.9366, places=3)
 
     def test_internal_thread_bore(self):
-        from mkga_fasteners.shapes import internal_minor_diameter
+        from mkga_components.shapes import internal_minor_diameter
         self.assertAlmostEqual(internal_minor_diameter(8, 1.25), 6.6469, places=3)
 
     def test_shapes_reject_impossible_sizes(self):
-        from mkga_fasteners.shapes import SHAPES, ShapeError
+        from mkga_components.shapes import SHAPES, ShapeError
         good = dict(d=8, P=1.25, dk=13, k=8, s=6, t=4)
         SHAPES["cap_screw"].check(good, 25)
         for bad, length in ((dict(good, s=12), 25), (dict(good, t=9), 25), (good, None), (good, 1.0), (dict(good, d=-1), 25)):
@@ -100,7 +124,7 @@ class CatalogTests(unittest.TestCase):
     def test_builtin_catalog_loads_without_problems(self):
         c = catalog()
         self.assertEqual(c.problems, [])
-        for std_id in ("din-912", "iso-7380-1", "din-7991", "din-125-a", "din-127-b", "din-934"):
+        for std_id in ("din-912", "iso-7380-1", "iso-7380-2", "din-7991", "din-125-a", "din-127-b", "din-934"):
             self.assertIn(std_id, c.standards)
 
     def test_every_size_and_length_of_every_standard_is_buildable(self):
@@ -127,9 +151,12 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(std.section_name, "Стандартные изделия")
         self.assertEqual(std.names("M2.5", 12.5, "12.9").file_stem, "Винт DIN 912 - M2,5 x 12,5 - 12.9")
         self.assertEqual(catalog().standards["din-934"].names("M8").file_stem, "Гайка DIN 934 - M8")
+        c = catalog()
+        self.assertEqual(c.standards["iso-7380-1"].names("M4", 8).file_stem, "Винт ISO 7380-1 - M4 x 8")
+        self.assertEqual(c.standards["iso-7380-2"].names("M4", 8).file_stem, "Винт ISO 7380-2 - M4 x 8")
 
     def test_file_names_never_contain_windows_forbidden_characters(self):
-        from mkga_fasteners.catalog import safe_filename
+        from mkga_components.catalog import safe_filename
         self.assertEqual(safe_filename('a/b:c*d?"e<f>g|h'), "a_b_c_d__e_f_g_h")
         self.assertEqual(safe_filename("  имя. "), "имя")
 
@@ -152,7 +179,7 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(len(c.search("")), len(c.standards))
 
     def test_user_standard_is_loaded_and_marked(self):
-        from mkga_fasteners.custom import template_for
+        from mkga_components.custom import template_for
         c0 = catalog()
         name, text = template_for(c0.standards["din-934"])
         with tempfile.TemporaryDirectory() as tmp:
@@ -184,7 +211,7 @@ class CatalogTests(unittest.TestCase):
         self.assertTrue(any("заменяет" in p for p in c.problems))
 
     def test_validate_explains_mistakes(self):
-        from mkga_fasteners.catalog import validate
+        from mkga_components.catalog import validate
         base = json.loads((DATA / "standards" / "din-934.json").read_text(encoding="utf-8"))
         self.assertEqual(validate(base), [])
         self.assertTrue(validate([]))
@@ -207,7 +234,7 @@ class CatalogTests(unittest.TestCase):
 
 class DrawingTests(unittest.TestCase):
     def test_every_standard_has_a_finite_drawing_and_a_valid_svg(self):
-        from mkga_fasteners import drawing
+        from mkga_components import drawing
         for std in catalog().standards.values():
             size = "M8" if "M8" in std.sizes else std.size_labels[0]
             lengths = std.lengths_for(size)
@@ -220,7 +247,7 @@ class DrawingTests(unittest.TestCase):
             self.assertTrue(rows and all(v for _s, _m, v in rows if _s != "b"), std.id)
 
     def test_partial_thread_shows_the_b_dimension_and_full_thread_does_not(self):
-        from mkga_fasteners import drawing
+        from mkga_components import drawing
         std = catalog().standards["din-912"]
         long_ = drawing.draw(std.shape, std.dims("M8"), 60)
         short = drawing.draw(std.shape, std.dims("M8"), 20)
@@ -230,18 +257,18 @@ class DrawingTests(unittest.TestCase):
         self.assertIn("l 60", texts(long_))
 
     def test_dimension_labels_show_the_values_from_the_table(self):
-        from mkga_fasteners import drawing
+        from mkga_components import drawing
         std = catalog().standards["din-934"]
         texts = [p.text for p in drawing.draw(std.shape, std.dims("M10"), None).prims if isinstance(p, drawing.Text)]
         self.assertEqual(sorted(texts), ["d 10", "m 8", "s 17"])
 
     def test_unknown_shape_is_an_error(self):
-        from mkga_fasteners import drawing
+        from mkga_components import drawing
         with self.assertRaises(KeyError):
             drawing.draw("нет", {}, None)
 
     def test_dome_points_start_at_the_apex_and_end_at_the_rim(self):
-        from mkga_fasteners.drawing import _dome_points
+        from mkga_components.drawing import _dome_points
         pts = _dome_points(14, 4.4)
         self.assertAlmostEqual(pts[0][0], 0, places=9)
         self.assertAlmostEqual(pts[0][1], 0, places=9)
@@ -254,7 +281,7 @@ def make_ctx(tmp: Path):
     from mkga.core.safe_io import BackupStore
     from mkga.runner import ModContext
     kompas = make_fake_kompas()
-    ctx = ModContext(mod_dir=MOD_DIR, data_dir=tmp / "data", connect=lambda: kompas, mod_id="fasteners",
+    ctx = ModContext(mod_dir=MOD_DIR, data_dir=tmp / "data", connect=lambda: kompas, mod_id="components",
                      backups=BackupStore(tmp / "store"))
     return ctx, kompas
 
@@ -276,18 +303,18 @@ class BuilderTests(unittest.TestCase):
         self.c = catalog()
 
     def request(self, std_id="din-912", size="M8", length=25, **kw):
-        from mkga_fasteners.builder import Request
+        from mkga_components.builder import Request
         kw.setdefault("open_after", False)
         return Request(self.c.standards[std_id], size, length, self.folder, **kw)
 
     def test_plan_gives_names_path_and_section(self):
-        from mkga_fasteners.builder import plan
+        from mkga_components.builder import plan
         p = plan(self.request())
         self.assertEqual(p.path, self.folder / "Винт DIN 912 - M8 x 25.m3d")
         self.assertEqual((p.exists, p.section), (False, "Стандартные изделия"))
 
     def test_plan_rejects_wrong_input(self):
-        from mkga_fasteners.builder import BuildError, Request, plan
+        from mkga_components.builder import BuildError, Request, plan
         std = self.c.standards["din-912"]
         for req in (self.request(size="M99"), self.request(length=7), self.request(length=None),
                     self.request(strength="99.9"), Request(std, "M8", 25, self.tmp / "нет-такой")):
@@ -295,11 +322,11 @@ class BuilderTests(unittest.TestCase):
                 plan(req)
 
     def test_washer_ignores_a_length(self):
-        from mkga_fasteners.builder import plan
+        from mkga_components.builder import plan
         self.assertEqual(plan(self.request("din-125-a", "M8", 99)).file_stem, "Шайба DIN 125 A - M8")
 
     def test_create_saves_the_part_sets_title_and_standard_type_and_threads_it(self):
-        from mkga_fasteners.builder import create_part
+        from mkga_components.builder import create_part
         r = create_part(self.ctx, self.request(length=60))
         self.assertTrue(r.path.is_file())
         doc = next(iter(self.kompas.app7.documents), None)
@@ -308,7 +335,7 @@ class BuilderTests(unittest.TestCase):
 
     def test_title_type_and_thread_are_recorded_on_the_part(self):
         from mkga.core.model3d import Part
-        from mkga_fasteners.builder import create_part
+        from mkga_components.builder import create_part
         seen = {}
         original_close = Part.close
 
@@ -322,6 +349,8 @@ class BuilderTests(unittest.TestCase):
         doc = seen["doc"]
         self.assertEqual(doc.properties[5], "Винт с цилиндрической головкой и шестигранным углублением под ключ DIN 912 - M8 x 60")
         self.assertEqual(doc.properties[14], "Стандартное изделие")
+        self.assertEqual(doc.spec_sections, [25])                   # объект спецификации: «Стандартные изделия»
+        self.assertIn('id="SPCSection" value="25"', doc.properties_xml)
         (thread,) = seen["threads"]
         self.assertEqual(thread.BaseObject.Radius, 4.0)
         self.assertEqual(thread.Lenght, 28)                      # b из таблицы
@@ -329,7 +358,7 @@ class BuilderTests(unittest.TestCase):
 
     def test_short_screw_gets_a_thread_over_the_whole_length(self):
         from mkga.core.model3d import Part
-        from mkga_fasteners.builder import create_part
+        from mkga_components.builder import create_part
         seen = {}
         original_close = Part.close
 
@@ -344,7 +373,7 @@ class BuilderTests(unittest.TestCase):
     def test_other_section_creates_a_spec_object_instead_of_a_type(self):
         from dataclasses import replace
         from mkga.core.model3d import Part
-        from mkga_fasteners.builder import Request, create_part
+        from mkga_components.builder import Request, create_part
         std = replace(self.c.standards["din-125-a"], section="other")
         seen = {}
         original_close = Part.close
@@ -355,11 +384,12 @@ class BuilderTests(unittest.TestCase):
 
         with mock.patch.object(Part, "close", spy):
             create_part(self.ctx, Request(std, "M8", None, self.folder, open_after=False))
-        self.assertEqual(seen["doc"].spec_sections, [40])
+        self.assertEqual(seen["doc"].spec_sections, [30])           # «Прочие изделия» (раздел 30)
         self.assertNotIn(14, seen["doc"].properties)
+        self.assertIn('id="SPCSection" value="30"', seen["doc"].properties_xml)
 
     def test_existing_file_needs_overwrite_and_the_old_one_is_kept_in_history(self):
-        from mkga_fasteners.builder import BuildError, create_part
+        from mkga_components.builder import BuildError, create_part
         first = create_part(self.ctx, self.request())
         first.path.write_bytes(b"old")
         with self.assertRaises(BuildError):
@@ -373,7 +403,7 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(first.path.read_bytes(), b"old")        # замену можно отменить
 
     def test_new_file_creation_can_be_undone(self):
-        from mkga_fasteners.builder import create_part
+        from mkga_components.builder import create_part
         r = create_part(self.ctx, self.request())
         info = self.ctx.backups.sessions()[0]
         self.assertEqual(info.operations[0].kind, "create")
@@ -381,14 +411,14 @@ class BuilderTests(unittest.TestCase):
         self.assertFalse(r.path.exists())
 
     def test_open_after_opens_the_saved_file_in_kompas(self):
-        from mkga_fasteners.builder import create_part
+        from mkga_components.builder import create_part
         r = create_part(self.ctx, self.request(open_after=True))
         self.assertTrue(r.opened)
         self.assertEqual([d.Name for d in self.kompas.app7.documents], [r.path.name])
 
     def test_failed_build_rolls_back_the_file_and_closes_the_hidden_document(self):
         from mkga.core.model3d import ModelError, Part
-        from mkga_fasteners.builder import create_part
+        from mkga_components.builder import create_part
         with mock.patch.object(Part, "verify_volume", side_effect=ModelError("объём не сошёлся")):
             with self.assertRaises(ModelError):
                 create_part(self.ctx, self.request())
@@ -396,7 +426,7 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(self.kompas.app7.Documents.Count, 0)
 
     def test_every_standard_builds_on_the_fake_with_its_shape(self):
-        from mkga_fasteners.builder import create_part
+        from mkga_components.builder import create_part
         for std in self.c.standards.values():
             size = "M8" if "M8" in std.sizes else std.size_labels[0]
             lengths = std.lengths_for(size)
@@ -404,14 +434,14 @@ class BuilderTests(unittest.TestCase):
             with self.subTest(standard=std.id):
                 folder = self.folder / std.id
                 folder.mkdir()
-                from mkga_fasteners.builder import Request
+                from mkga_components.builder import Request
                 create_part(self.ctx, Request(std, size, length, folder, open_after=False))
 
 
 class CustomPartsTests(unittest.TestCase):
     def test_template_is_a_valid_standard_with_a_new_id_and_an_empty_source_marker(self):
-        from mkga_fasteners.catalog import validate
-        from mkga_fasteners.custom import template_for
+        from mkga_components.catalog import validate
+        from mkga_components.custom import template_for
         std = catalog().standards["din-912"]
         name, text = template_for(std)
         data = json.loads(text)
@@ -421,15 +451,15 @@ class CustomPartsTests(unittest.TestCase):
         self.assertFalse(data["verified"])
 
     def test_template_id_never_exceeds_the_limit(self):
-        from mkga_fasteners.custom import template_for
+        from mkga_components.custom import template_for
         from dataclasses import replace
         std = replace(catalog().standards["din-912"], id="a" * 40)
         name, _ = template_for(std)
         self.assertLessEqual(len(name[:-5]), 40)
 
     def test_round_trip_through_json_keeps_the_standard(self):
-        from mkga_fasteners.catalog import _from_data
-        from mkga_fasteners.custom import standard_to_dict
+        from mkga_components.catalog import _from_data
+        from mkga_components.custom import standard_to_dict
         for std in catalog().standards.values():
             again = _from_data(json.loads(json.dumps(standard_to_dict(std))), "user", None)
             self.assertEqual(again.sizes, std.sizes, std.id)
@@ -437,8 +467,8 @@ class CustomPartsTests(unittest.TestCase):
             self.assertEqual(again.number, std.number)
 
     def test_ai_prompt_lists_all_shapes_rules_and_a_working_example(self):
-        from mkga_fasteners import shapes
-        from mkga_fasteners.custom import ai_prompt
+        from mkga_components import shapes
+        from mkga_components.custom import ai_prompt
         prompt = ai_prompt(catalog().standards["din-912"])
         for shape_id in shapes.SHAPES:
             self.assertIn(f'"{shape_id}"', prompt)
@@ -451,7 +481,7 @@ class CustomPartsTests(unittest.TestCase):
 @unittest.skipUnless(display_available(), "нет дисплея для tkinter")
 class WindowTests(unittest.TestCase):
     def setUp(self):
-        from mkga_fasteners.ui import FastenersWindow
+        from mkga_components.ui import ComponentsWindow
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp.name)
         self.folder = self.tmp / "parts"
@@ -459,7 +489,7 @@ class WindowTests(unittest.TestCase):
         self.user = self.tmp / "user"
         self.ctx, self.kompas = make_ctx(self.tmp)
         self.ctx.settings.set("folder", str(self.folder))
-        self.win = FastenersWindow(self.ctx, catalog(), version="0.1.0", user_dir=self.user, builtin_dir=DATA)
+        self.win = ComponentsWindow(self.ctx, catalog(), version="0.1.0", user_dir=self.user, builtin_dir=DATA)
         self.addCleanup(self._cleanup)
 
     def _cleanup(self):
@@ -553,7 +583,7 @@ class WindowTests(unittest.TestCase):
         w._select_standard("din-125-a")
         target = self.folder / "Шайба DIN 125 A - M8.m3d"
         target.write_bytes(b"old")
-        with mock.patch("mkga_fasteners.ui.messagebox.askyesno", return_value=False) as ask:
+        with mock.patch("mkga_components.ui.messagebox.askyesno", return_value=False) as ask:
             w._create()
             w.wait_idle(5)
         self.assertTrue(ask.called)
@@ -569,7 +599,7 @@ class WindowTests(unittest.TestCase):
     def test_template_and_reload_add_a_user_standard(self):
         w = self.win
         w._select_standard("din-934")
-        with mock.patch("mkga_fasteners.ui.os.startfile", create=True):
+        with mock.patch("mkga_components.ui.os.startfile", create=True):
             w.create_template()
             w.wait_idle(5)
         self.assertTrue((self.user / "my-din-934.json").is_file())
@@ -584,7 +614,7 @@ class WindowTests(unittest.TestCase):
         self.assertIn("Помоги добавить изделие", w.root.clipboard_get())
 
     def test_custom_dialog_opens(self):
-        from mkga_fasteners.custom import open_custom_dialog
+        from mkga_components.custom import open_custom_dialog
         open_custom_dialog(self.win)
         self.pump()
         tops = [c for c in self.win.root.winfo_children() if c.winfo_class() == "Toplevel"]
@@ -593,8 +623,8 @@ class WindowTests(unittest.TestCase):
 
     def test_works_in_the_dark_theme_too(self):
         from mkga.ui.theme import DARK
-        from mkga_fasteners.ui import FastenersWindow
-        other = FastenersWindow(self.ctx, catalog(), palette=DARK, user_dir=self.user, builtin_dir=DATA)
+        from mkga_components.ui import ComponentsWindow
+        other = ComponentsWindow(self.ctx, catalog(), palette=DARK, user_dir=self.user, builtin_dir=DATA)
         try:
             other.root.update()
             self.assertIsNotNone(other.std)
@@ -606,7 +636,7 @@ class ModuleEntryTests(unittest.TestCase):
     def test_manifest_is_valid_and_claims_only_the_tested_version(self):
         from mkga.manifest import load_manifest
         m = load_manifest(MOD_DIR)
-        self.assertEqual((m.id, list(m.kompas_versions)), ("fasteners", [24]))
+        self.assertEqual((m.id, list(m.kompas_versions)), ("components", [24]))
 
     def test_mod_passes_the_io_guard(self):
         from mkga.guard import check_path, violations
@@ -614,16 +644,16 @@ class ModuleEntryTests(unittest.TestCase):
 
     def test_main_loads_the_catalog_and_starts_the_app(self):
         import importlib.util
-        spec = importlib.util.spec_from_file_location("fasteners_main", MOD_DIR / "main.py")
+        spec = importlib.util.spec_from_file_location("components_main", MOD_DIR / "main.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         with tempfile.TemporaryDirectory() as tmp:
             ctx, _ = make_ctx(Path(tmp))
-            with mock.patch("mkga_fasteners.ui.run_app") as run_app:
+            with mock.patch("mkga_components.ui.run_app") as run_app:
                 module.run(ctx)
         (_, catalog_arg), kwargs = run_app.call_args
         self.assertIn("din-912", catalog_arg.standards)
-        self.assertEqual(kwargs["version"], "0.1.0")
+        self.assertEqual(kwargs["version"], "0.2.0")
         self.assertEqual(kwargs["user_dir"], Path(ctx.data_dir) / "standards")
 
 

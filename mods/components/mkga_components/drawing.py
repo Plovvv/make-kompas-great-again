@@ -147,8 +147,11 @@ def draw_screw(dims: Mapping[str, float], length: float, head: str = "cap") -> D
     b = dims.get("b")
     c = min(0.06 * dk, k / 3.0)
     countersunk = head == "csk"
+    flange = head == "flange"
+    dc = dims.get("dc", dk)
+    c_fl = dims.get("c", 0.0)
     shank_end = -length if countersunk else -(k + length)   # у потайного длина считается от верха головки
-    big = max(dk, abs(shank_end))
+    big = max(dc, abs(shank_end))
     gap = 0.07 * big
     text = 0.012 * big + 0.5
     prims: list = []
@@ -181,28 +184,32 @@ def draw_screw(dims: Mapping[str, float], length: float, head: str = "cap") -> D
 
     # размеры вида сбоку
     dim_h(prims, -dk / 2, dk / 2, top_y, top_y + gap, f"dk {num(dk)}", text)
-    dim_v(prims, -k, top_y, dk / 2, dk / 2 + gap, f"k {num(k)}", text)
+    dim_v(prims, -k, top_y, dc / 2, dc / 2 + gap, f"k {num(k)}", text)
+    if flange:
+        dim_h(prims, -dc / 2, dc / 2, -k, -k - gap * 0.9, f"dc {num(dc)}", text)
     l_top = top_y if countersunk else -k
-    dim_v(prims, shank_end, l_top, -dk / 2, -dk / 2 - gap, f"l {num(length)}", text)
+    dim_v(prims, shank_end, l_top, -dc / 2, -dc / 2 - gap, f"l {num(length)}", text)
     if not full:
         dim_v(prims, shank_end, y_thread_end, d / 2, d / 2 + gap * 1.8, f"b {num(b)}", text)
     dim_h(prims, -d / 2, d / 2, shank_end, shank_end - gap, f"d {num(d)}", text)
-    side = (-dk / 2 - gap * 2.6, shank_end - gap * 2.0, dk / 2 + gap * 3.6, top_y + gap * 1.8)
+    side = (-dc / 2 - gap * 2.6, shank_end - gap * 2.0, dc / 2 + gap * 3.6, top_y + gap * 1.8)
 
     # вид на головку (справа от вида сбоку)
-    cx = side[2] + gap * 1.2 + dk / 2 + gap
+    cx = side[2] + gap * 1.2 + dc / 2 + gap
     cy = -k / 2
-    prims.append(Circle(cx, cy, dk / 2))
+    prims.append(Circle(cx, cy, dc / 2))
+    if flange:
+        prims.append(Circle(cx, cy, dk / 2, THIN))
     if head == "cap":
         prims.append(Circle(cx, cy, dk / 2 - c, THIN))
     elif head == "csk":
         prims.append(Circle(cx, cy, d / 2, THIN))
     prims += _hexagon(cx, cy, s)
-    _center_h(prims, cx - dk / 2 - gap * 0.6, cx + dk / 2 + gap * 0.6, cy)
-    _center_v(prims, cx, cy - dk / 2 - gap * 0.6, cy + dk / 2 + gap * 0.6)
+    _center_h(prims, cx - dc / 2 - gap * 0.6, cx + dc / 2 + gap * 0.6, cy)
+    _center_v(prims, cx, cy - dc / 2 - gap * 0.6, cy + dc / 2 + gap * 0.6)
     hx = s / math.sqrt(3.0)
-    dim_v(prims, cy - s / 2, cy + s / 2, cx + hx, cx + dk / 2 + gap, f"s {num(s)}", text)
-    head_region = (cx - dk / 2 - gap, cy - dk / 2 - gap, cx + dk / 2 + gap * 3.6, cy + dk / 2 + gap)
+    dim_v(prims, cy - s / 2, cy + s / 2, cx + hx, cx + dc / 2 + gap, f"s {num(s)}", text)
+    head_region = (cx - dc / 2 - gap, cy - dc / 2 - gap, cx + dc / 2 + gap * 3.6, cy + dc / 2 + gap)
     return _finish(prims, [side, head_region], (("Вид сбоку", "слева"), ("Вид на головку (под ключ)", "справа")))
 
 
@@ -218,8 +225,44 @@ def draw_button_screw(dims, length):
     return draw_screw(dims, length, "button")
 
 
+def draw_flange_screw(dims, length):
+    return draw_screw(dims, length, "flange")
+
+
+def _arc_points(cx: float, cy: float, r: float, a0: float, a1: float, steps: int = 48) -> list[tuple[float, float]]:
+    return [(cx + r * math.cos(a0 + (a1 - a0) * i / steps), cy + r * math.sin(a0 + (a1 - a0) * i / steps))
+            for i in range(steps + 1)]
+
+
 def draw_spring_washer(dims: Mapping[str, float], length: float | None = None) -> Drawing:
-    return draw_washer({"d1": dims["d1"], "d2": dims["d1"] + 2 * dims["b"], "h": dims["s"]})
+    """Пружинная шайба: вид сбоку (кольцо) и вид сверху с разрывом справа."""
+    d1, b, s = dims["d1"], dims["b"], dims["s"]
+    d2 = d1 + 2 * b
+    r_in, r_out, gap_w = d1 / 2, d2 / 2, s            # ширина разрыва условно s
+    gap = 0.18 * d2
+    text = 0.03 * d2 + 0.3
+    prims: list = []
+    for sign in (-1, 1):
+        prims += _poly([(sign * r_in, 0), (sign * r_out, 0), (sign * r_out, -s), (sign * r_in, -s)])
+    prims += [Line(-r_in, 0, r_in, 0, THIN), Line(-r_in, -s, r_in, -s, THIN)]
+    _center_v(prims, 0, gap * 0.5, -s - gap * 0.5)
+    dim_h(prims, -r_out, r_out, 0, gap, f"d2 {num(d2)}", text)
+    dim_h(prims, -r_in, r_in, -s, -s - gap, f"d1 {num(d1)}", text)
+    dim_v(prims, -s, 0, r_out, r_out + gap, f"s {num(s)}", text)
+    side = (-r_out - gap * 0.6, -s - gap * 1.8, r_out + gap * 2.8, gap * 1.8)
+    cx = side[2] + gap + r_out
+    cy = -s / 2
+    half = gap_w / 2
+    for r in (r_out, r_in):                           # окружности с разрывом справа
+        a = math.asin(half / r)
+        prims += _poly([(cx + x, cy + y) for x, y in _arc_points(0, 0, r, a, 2 * math.pi - a)], close=False)
+    for z in (half, -half):                           # торцы разрыва
+        prims.append(Line(cx + math.sqrt(r_in ** 2 - half ** 2), cy + z, cx + math.sqrt(r_out ** 2 - half ** 2), cy + z))
+    _center_h(prims, cx - r_out - gap * 0.5, cx + r_out + gap * 0.5, cy)
+    _center_v(prims, cx, cy - r_out - gap * 0.5, cy + r_out + gap * 0.5)
+    dim_v(prims, cy - half, cy + half, cx + r_out, cx + r_out + gap * 0.9, f"разрыв {num(gap_w)}", text)
+    top = (cx - r_out - gap * 0.6, cy - r_out - gap * 0.6, cx + r_out + gap * 3.4, cy + r_out + gap * 0.6)
+    return _finish(prims, [side, top], (("Разрез по оси", "слева"), ("Вид сверху (разрыв условный)", "справа")))
 
 
 def draw_washer(dims: Mapping[str, float], length: float | None = None) -> Drawing:
@@ -278,7 +321,7 @@ def draw_nut_hex(dims: Mapping[str, float], length: float | None = None) -> Draw
     return _finish(prims, [side, top], (("Вид сбоку", "слева"), ("Вид сверху", "справа")))
 
 
-DRAWERS = {"cap_screw": draw_cap_screw, "csk_screw": draw_csk_screw, "button_screw": draw_button_screw,
+DRAWERS = {"cap_screw": draw_cap_screw, "csk_screw": draw_csk_screw, "button_screw": draw_button_screw, "flange_button_screw": draw_flange_screw,
            "washer_flat": draw_washer, "washer_spring": draw_spring_washer, "nut_hex": draw_nut_hex}
 
 # расшифровка букв размеров для подсказки в окне (буква, что это, ключ в таблице)
@@ -293,7 +336,11 @@ LEGENDS: dict[str, list[tuple[str, str, str]]] = {
     "button_screw": [("d", "диаметр резьбы", "d"), ("P", "шаг резьбы", "P"), ("dk", "диаметр головки", "dk"),
                      ("k", "высота головки", "k"), ("s", "размер под ключ", "s"), ("t", "глубина под ключ", "t"),
                      ("b", "длина резьбы от конца", "b"), ("l", "длина под головкой", "")],
-    "washer_spring": [("d1", "внутренний диаметр", "d1"), ("b", "ширина кольца", "b"), ("s", "толщина", "s")],
+    "flange_button_screw": [("d", "диаметр резьбы", "d"), ("P", "шаг резьбы", "P"), ("dk", "диаметр купола", "dk"),
+                            ("dc", "диаметр фланца", "dc"), ("k", "высота головки", "k"), ("c", "толщина фланца", "c"),
+                            ("s", "размер под ключ", "s"), ("t", "глубина под ключ", "t"),
+                            ("b", "длина резьбы от конца", "b"), ("l", "длина под головкой", "")],
+    "washer_spring": [("d1", "внутренний диаметр", "d1"), ("b", "ширина кольца", "b"), ("s", "толщина (и разрыв)", "s")],
     "washer_flat": [("d1", "внутренний диаметр", "d1"), ("d2", "наружный диаметр", "d2"), ("h", "толщина", "h")],
     "nut_hex": [("d", "диаметр резьбы", "d"), ("P", "шаг резьбы", "P"), ("s", "размер под ключ", "s"),
                 ("m", "высота гайки", "m"), ("dw", "начало фаски (диаметр)", "dw")],

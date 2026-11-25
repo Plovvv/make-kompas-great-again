@@ -1,7 +1,7 @@
-"""ЖИВАЯ проверка мода «Метизы и фитинги»: детали строятся в КОМПАС, объём сверяется с расчётом, файл сохраняется,
+"""ЖИВАЯ проверка мода «Каталог комплектующих»: детали строятся в КОМПАС, объём сверяется с расчётом, файл сохраняется,
 открывается заново и в нём читаются наименование, тип объекта и резьба.
 
-    $env:MKGA_LIVE_KOMPAS = "1"; python -m unittest tests.test_live_fasteners -v
+    $env:MKGA_LIVE_KOMPAS = "1"; python -m unittest tests.test_live_components -v
 
 Пропускается без MKGA_LIVE_KOMPAS=1. Нужен запущенный КОМПАС. Файлы пишутся только во временную папку, документы
 пользователя не трогаются. Проверено на КОМПАС-3D v24.
@@ -14,24 +14,24 @@ import unittest
 from pathlib import Path
 
 LIVE = os.environ.get("MKGA_LIVE_KOMPAS") == "1"
-MOD_DIR = Path(__file__).resolve().parent.parent / "mods" / "fasteners"
+MOD_DIR = Path(__file__).resolve().parent.parent / "mods" / "components"
 
 
 @unittest.skipUnless(LIVE, "живая проверка: задайте MKGA_LIVE_KOMPAS=1 и запустите КОМПАС")
-class LiveFastenersTests(unittest.TestCase):
+class LiveComponentsTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         sys.path.insert(0, str(MOD_DIR))
         from mkga.core.kompas import connect
         from mkga.core.safe_io import BackupStore
         from mkga.runner import ModContext
-        from mkga_fasteners.catalog import load_catalog
+        from mkga_components.catalog import load_catalog
 
         cls.k = connect()
         cls.catalog = load_catalog(MOD_DIR / "data")
         cls._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         cls.folder = Path(cls._tmp.name)
-        cls.ctx = ModContext(mod_dir=MOD_DIR, data_dir=cls.folder / "data", connect=lambda: cls.k, mod_id="fasteners",
+        cls.ctx = ModContext(mod_dir=MOD_DIR, data_dir=cls.folder / "data", connect=lambda: cls.k, mod_id="components",
                              backups=BackupStore(cls.folder / "store"))
 
     @classmethod
@@ -48,7 +48,7 @@ class LiveFastenersTests(unittest.TestCase):
 
     # --- помощники -------------------------------------------------------------------------------
     def create(self, std_id, size, length=None, strength=None):
-        from mkga_fasteners.builder import Request, create_part
+        from mkga_components.builder import Request, create_part
         std = self.catalog.standards[std_id]
         return create_part(self.ctx, Request(std, size, length, self.folder, strength, open_after=False))
 
@@ -67,6 +67,19 @@ class LiveFastenersTests(unittest.TestCase):
         from_source = VARIANT(pythoncom.VT_BYREF | pythoncom.VT_BOOL, False)
         com_iface.call(doc, "IPropertyKeeper", "GetPropertyValue", props[pid], value, True, from_source)
         return value.value
+
+    def sections_in_assembly(self, *paths):
+        """Вставить детали в скрытую СБОРКУ, построить её спецификацию и вернуть номера разделов объектов (по порядку)."""
+        from mkga.core import constants as C
+        asm = self.k.new_document(C.ksDocumentAssembly, False)
+        try:
+            for path in paths:
+                asm.TopPart.Parts.AddFromFile(str(path), True, False)
+            description = asm.SpecificationDescriptions.Add("", 1, "")
+            base = description.BaseObjects
+            return sorted(base.Item(i).Section for i in range(base.Count))
+        finally:
+            self.k.close_document(asm)
 
     def check_saved(self, result, *, object_type=None, threads=0):
         self.assertTrue(result.path.is_file())
@@ -165,21 +178,40 @@ class LiveFastenersTests(unittest.TestCase):
                 tol = std.shape_obj.volume_tol
                 self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * tol)
 
-    # --- «Прочие изделия» ----------------------------------------------------------------------------
-    def test_other_section_creates_a_spec_object(self):
+    # --- раздел спецификации ----------------------------------------------------------------------------------
+    def test_spec_sections_in_the_assembly_specification(self):
+        """Стандартные изделия попадают в раздел 25, покупные без стандарта в раздел 30 (проверено в спецификации сборки)."""
         from dataclasses import replace
-        from mkga_fasteners.builder import Request, create_part
-        std = replace(self.catalog.standards["din-125-a"], id="test-other", section="other")
-        r = create_part(self.ctx, Request(std, "M8", None, self.folder, None, open_after=False))
-        doc = self.k.app7.Documents.Open(str(r.path), False, False)
+        from mkga_components.builder import Request, create_part
+        standard = self.create("din-125-a", "M8")
+        other_std = replace(self.catalog.standards["din-125-a"], id="test-other", section="other")
+        other = create_part(self.ctx, Request(other_std, "M10", None, self.folder, None, open_after=False))
+        self.assertEqual(self.sections_in_assembly(standard.path), [25])
+        self.assertEqual(self.sections_in_assembly(other.path), [30])
+        self.assertEqual(self.sections_in_assembly(standard.path, other.path), [25, 30])
+
+    def test_spec_section_property_is_stored_in_the_file(self):
+        r = self.create("din-934", "M6")
+        doc, props = self.reopen(r.path)
         try:
+            from mkga.core import com_iface
+            self.assertTrue(com_iface.call(doc, "IPropertyKeeper", "IsComplexPropertyValue", props[20]))
+            xml = com_iface.get(doc, "IPropertyKeeper", "Properties")
+            self.assertIn('id="SPCSection" value="25"', xml)
             self.assertEqual(doc.SpecificationDescriptions.Count, 1)
         finally:
             doc.Close(0)
 
+    def test_iso7380_2_flange_screw(self):
+        for size, length in (("M3", 8), ("M4", 8), ("M6", 20), ("M8", 30), ("M12", 40), ("M16", 50)):
+            with self.subTest(size=size):
+                r = self.create("iso-7380-2", size, length)
+                self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 2e-3)
+        self.check_saved(self.create("iso-7380-2", "M5", 16), object_type="Стандартное изделие", threads=1)
+
     # --- существующий файл и откат ---------------------------------------------------------------------
     def test_existing_file_needs_overwrite_flag(self):
-        from mkga_fasteners.builder import BuildError, Request, create_part
+        from mkga_components.builder import BuildError, Request, create_part
         std = self.catalog.standards["din-125-a"]
         first = self.create("din-125-a", "M10")
         with self.assertRaises(BuildError):

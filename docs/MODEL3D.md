@@ -32,7 +32,7 @@ with Part.new(kompas) as part:                      # новый скрытый 
 | Выдавливание | `extrude(sketch, depth, direction=..., depth2=...)`: первое тело основание, дальше приклеивание |
 | Вырез | `cut_extrude(sketch, depth=None, direction=...)`: `depth=None` это «через всё» |
 | Вращение | `revolve(sketch, axis="OY", angle=360, cut=False)`: профиль по одну сторону оси |
-| Свойства | `set_properties(name, marking, material+density)`; `set_title(text)` («Наименование», № 5); `set_object_type("Стандартное изделие")` («Тип объекта», № 14); `add_spec_object(40)` (объект спецификации детали в раздел: 35 стандартные, 40 прочие) |
+| Свойства | `set_properties(name, marking, material+density)`; `set_title(text)` («Наименование», № 5); `set_object_type("Стандартное изделие")` («Тип объекта», № 14); `set_spec_section(25 | 30)` (раздел спецификации: объект спецификации детали + свойство SPCSection) |
 | Грани и резьба | `faces()`, `cylinder_faces(radius)`, `thread(radius, length=None, start_near=(x, y, z))`: «Условное изображение резьбы» (объём не меняется), `start_near` выбирает торцевую кромку, от которой отсчитывается длина |
 | Измерения | `mass_g`, `density`, `volume_mm3`, `verify_volume(expected_mm3, rel_tol)`, `planar_area_mm2()`, `verify_planar_area(expected_mm2, rel_tol)` |
 | Сохранение | `save_as(session, path)` (через откат), `close()` (без сохранения) |
@@ -64,12 +64,18 @@ with Part.new(kompas) as part:                      # новый скрытый 
     QueryInterface и вызов по номеру члена (memid) из библиотеки типов: `mkga.core.com_iface` (`get`, `call`, `put`).
     `app7.PropertyMng` и вызов по имени дают «неизвестное имя» или `None` вместо метода.
 11. **Свойства документа «Наименование» (№ 5) и «Тип объекта» (№ 14)** пишутся через `IPropertyKeeper.SetPropertyValue`,
-    сохраняются в файле и читаются после повторного открытия. «Раздел спецификации» (№ 20) только для чтения: он
-    выводится из «Типа объекта» («Стандартное изделие» даёт стандартные изделия). `IPart7.Standard` и `CreateSpcObjects`
-    молча не записываются. Допустимые значения «Типа объекта» отдаёт сам КОМПАС (`ListVal`): Деталь, Сборочная единица,
-    Стандартное изделие, Компонент из библиотеки, Тело, Деталь-заготовка и другие («Прочее изделие» среди них нет: для
-    раздела «Прочие изделия» создаётся объект спецификации детали: `SpecificationDescriptions.Add("", 1, "")`,
-    `BaseObjects.Add(40, 1.0)`; как он виден в спецификации сборки, не проверено).
+    сохраняются в файле и читаются после повторного открытия (в хранилище это `name` и `featureType`; хранилище
+    `IPropertyKeeper.Properties` это XML со строками `<property id=... value=... type=.../>`, его можно читать и писать).
+    **Раздел спецификации детали** (свойство № 20, «Раздел спец…» в списке свойств): определяется **объектом спецификации
+    внутри самой детали** (`add_spec_object`: `SpecificationDescriptions.Add("", 1, "")`, `BaseObjects.Add(номер, 1.0)`,
+    `IncludeGeometry(top, True)`). Проверено на сборке со спецификацией: деталь с объектом 25 попадает в «Стандартные
+    изделия», с 30 в «Прочие изделия», без объекта в «Детали». Тип объекта («Стандартное изделие») и свойство `SPCSection`
+    раздел в сборке **не** меняют. Номера разделов берутся из стиля (`description.SpecificationStyle.Sections`): Документация
+    5, Комплексы 10, Сборочные единицы 15, Детали 20, Программные изделия 23, **Стандартные изделия 25, Прочие изделия 30**,
+    Инструмент 32, Принадлежности 33, Приспособления 34, Материалы 35, Комплекты 40. Свойство `SPCSection` (значение раздела и
+    вложенное `subSectionNumb`) записывается в XML хранилища (`set_spec_section_property`), после чего № 20 становится
+    «сложным» (`IsComplexPropertyValue`, `GetComplexPropertyValue` отдаёт XML); `GetPropertyValue` для него по-прежнему
+    возвращает пустую строку. `IPart7.Standard` и `CreateSpcObjects` молча не записываются.
 12. **Дуга:** `view.Arcs.Add()`, поля `Xc, Yc, Radius, Angle1, Angle2` и `Direction`; **`Direction = False` идёт против
     часовой стрелки** от `Angle1` к `Angle2` (наоборот, чем кажется). Объём шарового сегмента совпал с формулой до 1e-15.
 13. **Условное изображение резьбы:** `top.Threads.Add()`, `BaseObject` = цилиндрическая грань, `AutoDiameter = True`,

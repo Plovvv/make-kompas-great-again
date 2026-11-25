@@ -1,0 +1,13 @@
+{
+  "id": "components",
+  "name": "Каталог комплектующих",
+  "version": "0.2.0",
+  "description": "Каталог стандартных и покупных комплектующих (крепёж DIN/ISO и другое): выбор типоразмера, чертёж с размерами, создание детали с нужным именем и разделом спецификации, свои детали таблицей.",
+  "author": "MKGA contributors",
+  "license": "MIT",
+  "kind": "app",
+  "entry": "main.py",
+  "kompas_versions": [24],
+  "tags": ["components", "fasteners", "catalog", "standard-parts", "din", "iso"],
+  "requires": ["pywin32"]
+}

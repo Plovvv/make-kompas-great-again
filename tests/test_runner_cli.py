@@ -73,9 +73,9 @@ class CliTests(unittest.TestCase):
     def test_validate_and_install_zip_flow(self):
         with tempfile.TemporaryDirectory() as t:
             t = Path(t)
-            code, out, _ = self.run_cli("validate", str(ROOT / "mods" / "fasteners"))
+            code, out, _ = self.run_cli("validate", str(ROOT / "mods" / "components"))
             self.assertEqual(code, 0)
-            self.assertIn("fasteners", out)
+            self.assertIn("components", out)
             z = make_zip(t / "a.zip", good_manifest())
             self.assertEqual(self.run_cli("--mods-dir", str(t / "m"), "install-zip", str(z))[0], 0)
             code, out, _ = self.run_cli("--mods-dir", str(t / "m"), "list")

@@ -19,7 +19,7 @@ from tkinter import ttk
 from . import drawing, shapes
 from .catalog import Standard
 
-DOC_HINT = "mods/fasteners/docs/ADDING_PARTS.md"
+DOC_HINT = "mods/components/docs/ADDING_PARTS.md"
 SHARE_HINT = ("Чтобы добавить деталь в общий каталог: откройте задачу «Предложить мод или деталь» в репозитории MKGA "
               "на GitHub и приложите свой файл .json (укажите, откуда взяты размеры).")
 
@@ -69,7 +69,7 @@ def ai_prompt(example: Standard | None) -> str:
         if "lengths" in small:
             small["lengths"] = small["lengths"][:8]
         sample = json.dumps(small, ensure_ascii=False, indent=2)
-    return f"""Помоги добавить изделие в каталог метизов для КОМПАС-3D (мод «Метизы и фитинги» проекта MKGA).
+    return f"""Помоги добавить изделие в каталог метизов для КОМПАС-3D (мод «Каталог комплектующих» проекта MKGA).
 Нужен ОДИН файл JSON с таблицей размеров. Мод сам построит 3D-деталь по форме и размерам.
 
 ПРАВИЛА
@@ -80,7 +80,7 @@ def ai_prompt(example: Standard | None) -> str:
 4. Формы (поле "shape"), для которых уже есть построение:
 {shapes_help()}
    Если изделию подходит одна из форм, нужна только таблица. Если нужна новая форма, так и скажи:
-   её придётся добавить в код (mkga_fasteners/shapes.py).
+   её придётся добавить в код (mkga_components/shapes.py).
 5. "section": "standard" для стандартных изделий (раздел спецификации «Стандартные изделия»),
    "other" для покупных изделий без стандарта («Прочие изделия»).
 6. "id" только латиница в нижнем регистре, цифры и дефис (например "my-din-933"). "category": один из
