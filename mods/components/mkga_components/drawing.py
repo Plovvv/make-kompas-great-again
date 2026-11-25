@@ -175,7 +175,7 @@ def draw_screw(dims: Mapping[str, float], length: float, head: str = "cap") -> D
     minor = d - 1.082532 * p
     full = b is None or b >= length
     y_thread_end = shank_end + (length if full else b)
-    y_top_thread = max(y_thread_end, -k)
+    y_top_thread = min(y_thread_end, -k)
     prims += [Line(-minor / 2, shank_end, -minor / 2, y_top_thread, THIN),
               Line(minor / 2, shank_end, minor / 2, y_top_thread, THIN)]
     if not full:
@@ -321,8 +321,80 @@ def draw_nut_hex(dims: Mapping[str, float], length: float | None = None) -> Draw
     return _finish(prims, [side, top], (("Вид сбоку", "слева"), ("Вид сверху", "справа")))
 
 
+def draw_hex_bolt(dims: Mapping[str, float], length: float | None = None) -> Drawing:
+    """Болт с шестигранной головкой: вид сбоку (головка с фаской, резьба) и вид сверху."""
+    from .shapes import hex_bolt_thread_length
+    d, p, s, k, dw = (dims[x] for x in ("d", "P", "s", "k", "dw"))
+    length = float(length)
+    b = hex_bolt_thread_length(dims, length)
+    corner = s / math.sqrt(3.0)
+    big = max(s, length)
+    gap = 0.07 * big
+    text = 0.012 * big + 0.5
+    prims: list = []
+    drop = (corner - dw / 2) * math.tan(math.radians(30))     # срез фаски у угла шестигранника
+    tip = -k - length
+    prims += _poly([(-dw / 2, 0.0), (dw / 2, 0.0), (s / 2, -drop), (s / 2, -k), (d / 2, -k), (d / 2, tip + p),
+                    (d / 2 - p, tip), (-d / 2 + p, tip), (-d / 2, tip + p), (-d / 2, -k), (-s / 2, -k), (-s / 2, -drop)])
+    minor = d - 1.082532 * p
+    full = b is None
+    y_end = tip + (length if full else b)
+    y_top = min(y_end, -k)
+    prims += [Line(-minor / 2, tip, -minor / 2, y_top, THIN), Line(minor / 2, tip, minor / 2, y_top, THIN)]
+    if not full:
+        prims.append(Line(-d / 2, y_end, d / 2, y_end, OUTLINE))
+    _center_v(prims, 0, gap * 0.6, tip - gap * 0.6)
+    dim_h(prims, -s / 2, s / 2, 0.0, gap, f"s {num(s)}", text)
+    dim_v(prims, -k, 0.0, s / 2, s / 2 + gap, f"k {num(k)}", text)
+    dim_v(prims, tip, -k, -s / 2, -s / 2 - gap, f"l {num(length)}", text)
+    if not full:
+        dim_v(prims, tip, y_end, d / 2, d / 2 + gap * 1.8, f"b {num(b)}", text)
+    dim_h(prims, -d / 2, d / 2, tip, tip - gap, f"d {num(d)}", text)
+    side = (-s / 2 - gap * 2.6, tip - gap * 2.0, s / 2 + gap * 3.6, gap * 1.8)
+    cx = side[2] + gap * 1.2 + corner + gap
+    cy = -k / 2
+    prims += _hexagon(cx, cy, s)
+    prims += [Circle(cx, cy, dw / 2, THIN), Circle(cx, cy, d / 2, HIDDEN)]
+    _center_h(prims, cx - corner - gap * 0.6, cx + corner + gap * 0.6, cy)
+    _center_v(prims, cx, cy - corner - gap * 0.6, cy + corner + gap * 0.6)
+    dim_v(prims, cy - s / 2, cy + s / 2, cx + corner, cx + corner + gap, f"s {num(s)}", text)
+    top = (cx - corner - gap, cy - corner - gap, cx + corner + gap * 3.6, cy + corner + gap)
+    return _finish(prims, [side, top], (("Вид сбоку", "слева"), ("Вид сверху", "справа")))
+
+
+def draw_nut_nyloc(dims: Mapping[str, float], length: float | None = None) -> Drawing:
+    """Самоконтрящаяся гайка: шестигранник с фаской снизу и цилиндрический буртик сверху."""
+    d, p, s, m, h, dw = (dims[x] for x in ("d", "P", "s", "m", "h", "dw"))
+    bore = d - 1.082532 * p
+    corner = s / math.sqrt(3.0)
+    gap = 0.2 * s
+    text = 0.035 * s + 0.3
+    prims: list = []
+    drop = (s / 2 - dw / 2) * math.tan(math.radians(30))
+    bottom, hex_top, top = 0.0, m, h
+    prims += _poly([(-dw / 2, bottom), (dw / 2, bottom), (s / 2, bottom + drop), (s / 2, hex_top), (dw / 2, hex_top),
+                    (dw / 2, top), (-dw / 2, top), (-dw / 2, hex_top), (-s / 2, hex_top), (-s / 2, bottom + drop)])
+    prims += [Line(-bore / 2, bottom, -bore / 2, top, HIDDEN), Line(bore / 2, bottom, bore / 2, top, HIDDEN),
+              Line(-d / 2, bottom, -d / 2, top, HIDDEN), Line(d / 2, bottom, d / 2, top, HIDDEN)]
+    _center_v(prims, 0, top + gap * 0.6, bottom - gap * 0.6)
+    dim_h(prims, -s / 2, s / 2, top, top + gap, f"s {num(s)}", text)
+    dim_v(prims, bottom, hex_top, s / 2, s / 2 + gap, f"m {num(m)}", text)
+    dim_v(prims, bottom, top, -s / 2, -s / 2 - gap, f"h {num(h)}", text)
+    dim_h(prims, -d / 2, d / 2, bottom, bottom - gap, f"d {num(d)}", text)
+    side = (-s / 2 - gap * 2.6, bottom - gap * 1.8, s / 2 + gap * 2.8, top + gap * 1.8)
+    cx = side[2] + gap + corner
+    cy = h / 2
+    prims += _hexagon(cx, cy, s)
+    prims += [Circle(cx, cy, dw / 2), Circle(cx, cy, bore / 2), Circle(cx, cy, d / 2, THIN)]
+    _center_h(prims, cx - corner - gap * 0.6, cx + corner + gap * 0.6, cy)
+    _center_v(prims, cx, cy - corner - gap * 0.6, cy + corner + gap * 0.6)
+    top_view = (cx - corner - gap * 0.6, cy - corner - gap * 0.6, cx + corner + gap * 0.6, cy + corner + gap * 0.6)
+    return _finish(prims, [side, top_view], (("Вид сбоку", "слева"), ("Вид сверху", "справа")))
+
+
 DRAWERS = {"cap_screw": draw_cap_screw, "csk_screw": draw_csk_screw, "button_screw": draw_button_screw, "flange_button_screw": draw_flange_screw,
-           "washer_flat": draw_washer, "washer_spring": draw_spring_washer, "nut_hex": draw_nut_hex}
+           "washer_flat": draw_washer, "washer_spring": draw_spring_washer, "nut_hex": draw_nut_hex,
+           "hex_bolt": draw_hex_bolt, "nut_nyloc": draw_nut_nyloc}
 
 # расшифровка букв размеров для подсказки в окне (буква, что это, ключ в таблице)
 LEGENDS: dict[str, list[tuple[str, str, str]]] = {
@@ -342,6 +414,11 @@ LEGENDS: dict[str, list[tuple[str, str, str]]] = {
                             ("b", "длина резьбы от конца", "b"), ("l", "длина под головкой", "")],
     "washer_spring": [("d1", "внутренний диаметр", "d1"), ("b", "ширина кольца", "b"), ("s", "толщина (и разрыв)", "s")],
     "washer_flat": [("d1", "внутренний диаметр", "d1"), ("d2", "наружный диаметр", "d2"), ("h", "толщина", "h")],
+    "hex_bolt": [("d", "диаметр резьбы", "d"), ("P", "шаг резьбы", "P"), ("s", "размер под ключ", "s"),
+                 ("k", "высота головки", "k"), ("dw", "начало фаски (диаметр)", "dw"), ("b", "длина резьбы от конца", "b"),
+                 ("l", "длина под головкой", "")],
+    "nut_nyloc": [("d", "диаметр резьбы", "d"), ("P", "шаг резьбы", "P"), ("s", "размер под ключ", "s"),
+                  ("m", "высота шестигранника", "m"), ("h", "полная высота", "h"), ("dw", "диаметр буртика и фаски", "dw")],
     "nut_hex": [("d", "диаметр резьбы", "d"), ("P", "шаг резьбы", "P"), ("s", "размер под ключ", "s"),
                 ("m", "высота гайки", "m"), ("dw", "начало фаски (диаметр)", "dw")],
 }

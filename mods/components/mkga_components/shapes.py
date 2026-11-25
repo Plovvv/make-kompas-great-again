@@ -495,6 +495,121 @@ def _spring_build(part, dims, length):
     part.cut_extrude(slit, direction="both")                                                 # сквозная по высоте
 
 
+# --- болт с шестигранной головкой (DIN 933 / DIN 931, ISO 4017 / ISO 4014) --------------------------------------------
+# Деталь строится симметрично относительно плоскости XOZ: головка занимает y от -k/2 до +k/2, стержень идёт вниз.
+def hex_bolt_thread_length(dims: Mapping[str, float], length: float) -> float | None:
+    """Длина резьбы от конца: b (l <= 125), b2 (125 < l <= 200), b3 (l > 200); None, если резьба на всю длину (DIN 933)."""
+    if dims.get("b") is None:
+        return None
+    key = "b" if length <= 125 else "b2" if length <= 200 else "b3"
+    value = dims.get(key)
+    return None if value is None or value >= length else float(value)
+
+
+def _bolt_shank(dims: Mapping[str, float], length: float) -> list[Point]:
+    d, p, k = dims["d"], dims["P"], dims["k"]
+    top = -k / 2.0
+    return [(0.0, top), (d / 2, top), (d / 2, top - (length - p)), (d / 2 - p, top - length), (0.0, top - length)]
+
+
+def _bolt_check(dims, length):
+    _need(dims, ("d", "P", "s", "k", "dw"), "болт")
+    _positive(dims, ("d", "P", "s", "k", "dw"))
+    if length is None or length <= dims["P"]:
+        raise ShapeError("длина болта должна быть больше шага резьбы")
+    if dims["dw"] >= dims["s"] or dims["d"] >= dims["dw"]:
+        raise ShapeError("размеры фаски головки не согласованы: должно быть d < dw < s")
+    if (dims["s"] / math.cos(math.radians(30)) / 2 - dims["dw"] / 2) * TAN30 >= dims["k"]:
+        raise ShapeError("фаска срезает головку по всей высоте")
+
+
+def _bolt_volume(dims, length):
+    head = hexagon_area(dims["s"]) * dims["k"] - hex_chamfer_volume(dims["s"], dims["dw"], 30.0)
+    return head + revolved_volume(_bolt_shank(dims, length))
+
+
+def _bolt_planar_area(dims, length) -> float:
+    """Плоские грани: верх головки (круг dw), шесть боковых граней с выемкой фаски, низ головки (шестигранник без стержня), торец."""
+    s, k, dw, d, p = dims["s"], dims["k"], dims["dw"], dims["d"], dims["P"]
+    flat = s / math.sqrt(3.0) * k - hex_flat_notch_area(s, dw)
+    return (math.pi * (dw / 2) ** 2 + 6.0 * flat + hexagon_area(s) - math.pi * (d / 2) ** 2 + math.pi * (d / 2 - p) ** 2)
+
+
+def _bolt_verify(part, dims, length):
+    part.verify_planar_area(_bolt_planar_area(dims, length), 1e-4)
+
+
+def _bolt_build(part, dims, length):
+    k, s, d, p = dims["k"], dims["s"], dims["d"], dims["P"]
+    with part.sketch("XOZ") as sk:
+        sk.regular_polygon(6, across_flats=s)
+    part.extrude(sk, k, direction="middle")
+    _revolve_profile(part, _bolt_shank(dims, length))
+    rc = dims["dw"] / 2.0
+    big = s / math.cos(math.radians(30)) / 2.0 + 1.0
+    depth = (big - rc) * TAN30
+    top = k / 2.0
+    _revolve_profile(part, [(rc, top), (big, top), (big, top - depth)], cut=True)     # фаска 30° верха головки
+    b = hex_bolt_thread_length(dims, length)
+    tip = (d / 2, -k / 2.0 - (length - p), 0.0)
+    part.thread(d / 2, b, start_near=tip)
+
+
+# --- самоконтрящаяся гайка с нейлоновым кольцом (DIN 985, ISO 10511) ------------------------------------------------------
+def _nyloc_collar(dims: Mapping[str, float]) -> float:
+    return dims["h"] - dims["m"]
+
+
+def _nyloc_check(dims, length):
+    _need(dims, ("d", "P", "s", "m", "h", "dw"), "самоконтрящаяся гайка")
+    _positive(dims, ("d", "P", "s", "m", "h", "dw"))
+    bore = internal_minor_diameter(dims["d"], dims["P"])
+    if _nyloc_collar(dims) <= 0:
+        raise ShapeError("полная высота h должна быть больше высоты шестигранника m")
+    if bore >= dims["dw"] or dims["dw"] > dims["s"]:
+        raise ShapeError("размеры фаски гайки не согласованы")
+    if (dims["s"] / math.cos(math.radians(30)) / 2 - dims["dw"] / 2) * TAN30 >= dims["m"]:
+        raise ShapeError("фаска срезает шестигранник по всей высоте")
+
+
+def _nyloc_volume(dims, length):
+    bore = internal_minor_diameter(dims["d"], dims["P"])
+    hole = math.pi * (bore / 2.0) ** 2 * dims["h"]
+    collar = math.pi * (dims["dw"] / 2.0) ** 2 * _nyloc_collar(dims)
+    return hexagon_area(dims["s"]) * dims["m"] + collar - hole - hex_chamfer_volume(dims["s"], dims["dw"], 30.0)
+
+
+def _nyloc_planar_area(dims) -> float:
+    """Плоские грани: нижний торец, шесть граней с выемкой снизу, верх шестигранника вокруг буртика, верх буртика."""
+    s, m, dw = dims["s"], dims["m"], dims["dw"]
+    rc = dw / 2.0
+    rb = internal_minor_diameter(dims["d"], dims["P"]) / 2.0
+    flat = s / math.sqrt(3.0) * m - hex_flat_notch_area(s, dw)
+    return (math.pi * (rc ** 2 - rb ** 2) + 6.0 * flat + (hexagon_area(s) - math.pi * rc ** 2) + math.pi * (rc ** 2 - rb ** 2))
+
+
+def _nyloc_verify(part, dims, length):
+    part.verify_planar_area(_nyloc_planar_area(dims), 1e-4)
+
+
+def _nyloc_build(part, dims, length):
+    m, s, h = dims["m"], dims["s"], dims["h"]
+    rc = dims["dw"] / 2.0
+    bore = internal_minor_diameter(dims["d"], dims["P"])
+    with part.sketch("XOZ") as sk:
+        sk.regular_polygon(6, across_flats=s)
+    part.extrude(sk, m, direction="middle")
+    top = m / 2.0
+    _revolve_profile(part, [(0.0, top - 0.5), (rc, top - 0.5), (rc, top - m + h), (0.0, top - m + h)])   # буртик с нейлоновым кольцом
+    with part.sketch("XOZ") as hole:
+        hole.circle(0, 0, bore / 2.0)
+    part.cut_extrude(hole, direction="both")
+    big = s / math.cos(math.radians(30)) / 2.0 + 1.0
+    depth = (big - rc) * TAN30
+    _revolve_profile(part, [(rc, -m / 2.0), (big, -m / 2.0), (big, -m / 2.0 + depth)], cut=True)   # фаска 30° только снизу
+    part.thread(bore / 2.0)
+
+
 SHAPES: dict[str, Shape] = {
     "cap_screw": Shape("cap_screw", "Винт с цилиндрической головкой и шестигранным углублением",
                        ("d", "P", "dk", "k", "s", "t"), True, "external",
@@ -511,6 +626,10 @@ SHAPES: dict[str, Shape] = {
     "flange_button_screw": Shape("flange_button_screw", "Винт с полукруглой головкой и фланцем и шестигранным углублением",
                                  ("d", "P", "dk", "dc", "k", "c", "s", "t"), True, "external", _flange_check,
                                  _flange_volume, _flange_build, volume_tol=2e-3, verify=_flange_verify),
+    "hex_bolt": Shape("hex_bolt", "Болт с шестигранной головкой", ("d", "P", "s", "k", "dw"), True, "external",
+                      _bolt_check, _bolt_volume, _bolt_build, volume_tol=3e-2, verify=_bolt_verify),
+    "nut_nyloc": Shape("nut_nyloc", "Самоконтрящаяся гайка с нейлоновым кольцом", ("d", "P", "s", "m", "h", "dw"), False,
+                       "internal", _nyloc_check, _nyloc_volume, _nyloc_build, volume_tol=3e-2, verify=_nyloc_verify),
     "nut_hex": Shape("nut_hex", "Шестигранная гайка", ("d", "P", "s", "m", "dw"), False, "internal",
                      _nut_check, _nut_volume, _nut_build, volume_tol=3e-2, verify=_nut_verify),
 }

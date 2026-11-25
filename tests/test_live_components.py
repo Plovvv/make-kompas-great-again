@@ -167,6 +167,40 @@ class LiveComponentsTests(unittest.TestCase):
                 self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 1e-6)
         self.check_saved(self.create("din-127-b", "M6"), object_type="Стандартное изделие", threads=0)
 
+    # --- DIN 933 / 931, DIN 9021, DIN 439, DIN 985 ------------------------------------------------------------------
+    def test_din933_hex_bolts(self):
+        for size, length in (("M3", 10), ("M6", 25), ("M8", 40), ("M12", 60), ("M20", 100), ("M36", 150)):
+            with self.subTest(size=size):
+                r = self.create("din-933", size, length)     # плоские грани проверяются внутри create_part (verify)
+                self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 3e-2)
+        self.check_saved(self.create("din-933", "M8", 30), object_type="Стандартное изделие", threads=1)
+
+    def test_din931_partial_thread_boundaries(self):
+        for size, length in (("M8", 50), ("M8", 150), ("M12", 240), ("M12", 50)):
+            with self.subTest(size=size, length=length):
+                r = self.create("din-931", size, length)
+                self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 3e-2)
+        self.check_saved(self.create("din-931", "M10", 80), object_type="Стандартное изделие", threads=1)
+
+    def test_din9021_washers(self):
+        for size in ("M3", "M8", "M20", "M36"):
+            with self.subTest(size=size):
+                r = self.create("din-9021", size)
+                self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 1e-6)
+
+    def test_din439_thin_nuts(self):
+        for size in ("M3", "M8", "M16", "M30"):
+            with self.subTest(size=size):
+                r = self.create("din-439", size)
+                self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 3e-2)
+
+    def test_din985_nylon_lock_nuts(self):
+        for size in ("M3", "M8", "M12", "M24"):
+            with self.subTest(size=size):
+                r = self.create("din-985", size)
+                self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 3e-2)
+        self.check_saved(self.create("din-985", "M6"), object_type="Стандартное изделие", threads=1)
+
     def test_every_catalog_standard_builds_with_one_sample_size(self):
         """По одному типоразмеру из каждого стандарта каталога: страховка от опечаток в таблицах."""
         for std in self.catalog.standards.values():

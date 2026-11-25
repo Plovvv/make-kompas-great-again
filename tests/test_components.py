@@ -97,6 +97,35 @@ class ShapeMathTests(unittest.TestCase):
             with self.assertRaises(ShapeError):
                 SHAPES["flange_button_screw"].check(bad, 20)
 
+    def test_hex_bolt_thread_length_follows_the_length_ranges(self):
+        from mkga_components.shapes import hex_bolt_thread_length
+        dims = dict(b=22, b2=28, b3=41)
+        self.assertEqual(hex_bolt_thread_length(dims, 50), 22)
+        self.assertEqual(hex_bolt_thread_length(dims, 125), 22)
+        self.assertEqual(hex_bolt_thread_length(dims, 150), 28)
+        self.assertEqual(hex_bolt_thread_length(dims, 250), 41)
+        self.assertIsNone(hex_bolt_thread_length(dims, 20))          # b не меньше длины: резьба на всю длину
+        self.assertIsNone(hex_bolt_thread_length({}, 50))            # DIN 933: резьба на всю длину
+
+    def test_hex_bolt_and_nyloc_volumes_are_consistent(self):
+        from mkga_components.shapes import SHAPES, hexagon_area, hex_chamfer_volume, internal_minor_diameter
+        bolt = dict(d=8, P=1.25, s=13, k=5.3, dw=11.7)
+        v = SHAPES["hex_bolt"].volume(bolt, 40)
+        head = hexagon_area(13) * 5.3 - hex_chamfer_volume(13, 11.7)
+        self.assertGreater(v, head + math.pi * 3.5 ** 2 * 38)       # стержень не короче 38 мм
+        self.assertLess(v, head + math.pi * 4 ** 2 * 40)
+        nut = dict(d=8, P=1.25, s=13, m=5.5, h=8, dw=11.7)
+        plain = SHAPES["nut_hex"].volume(nut, None)          # та же гайка без буртика и с фаской с двух сторон
+        collar = math.pi * (11.7 / 2) ** 2 * 2.5 - math.pi * (internal_minor_diameter(8, 1.25) / 2) ** 2 * 2.5
+        self.assertAlmostEqual(SHAPES["nut_nyloc"].volume(nut, None), plain + hex_chamfer_volume(13, 11.7) + collar, places=6)
+
+    def test_hex_bolt_and_nyloc_reject_inconsistent_sizes(self):
+        from mkga_components.shapes import SHAPES, ShapeError
+        with self.assertRaises(ShapeError):
+            SHAPES["hex_bolt"].check(dict(d=8, P=1.25, s=13, k=5.3, dw=14), 40)
+        with self.assertRaises(ShapeError):
+            SHAPES["nut_nyloc"].check(dict(d=8, P=1.25, s=13, m=8, h=8, dw=11.7), None)
+
     def test_dome_pocket_correction_is_positive_and_small(self):
         from mkga_components.shapes import dome_pocket_correction
         v = dome_pocket_correction(5, 7.768)
@@ -124,7 +153,8 @@ class CatalogTests(unittest.TestCase):
     def test_builtin_catalog_loads_without_problems(self):
         c = catalog()
         self.assertEqual(c.problems, [])
-        for std_id in ("din-912", "iso-7380-1", "iso-7380-2", "din-7991", "din-125-a", "din-127-b", "din-934"):
+        for std_id in ("din-912", "iso-7380-1", "iso-7380-2", "din-7991", "din-125-a", "din-127-b", "din-934",
+                       "din-933", "din-931", "din-9021", "din-439", "din-985"):
             self.assertIn(std_id, c.standards)
 
     def test_every_size_and_length_of_every_standard_is_buildable(self):
@@ -653,7 +683,7 @@ class ModuleEntryTests(unittest.TestCase):
                 module.run(ctx)
         (_, catalog_arg), kwargs = run_app.call_args
         self.assertIn("din-912", catalog_arg.standards)
-        self.assertEqual(kwargs["version"], "0.2.0")
+        self.assertEqual(kwargs["version"], "0.3.0")
         self.assertEqual(kwargs["user_dir"], Path(ctx.data_dir) / "standards")
 
 
