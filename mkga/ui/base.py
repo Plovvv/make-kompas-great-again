@@ -9,10 +9,13 @@
 
 from __future__ import annotations
 
+import os
 import queue
+import tempfile
 import threading
 import tkinter as tk
 import traceback
+from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Callable
 
@@ -24,10 +27,23 @@ from .theme import ICONS, LIGHT, Palette, apply_theme, enable_dpi_awareness
 _PILL = {"ok": "PillOk.TLabel", "error": "PillError.TLabel", "muted": "PillMuted.TLabel"}
 
 
+def _set_app_user_model_id(app_id: str) -> None:
+    """Отдельный идентификатор приложения: панель задач Windows группирует окна по нему и берёт значок окна,
+    а не значок python.exe (иначе у окон модов, запущенных из Python, значок Python)."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+    except (AttributeError, OSError):
+        pass
+
+
 class WindowBase:
     def __init__(self, ctx: ModContext, title: str, *, size: tuple[int, int], min_size: tuple[int, int],
                  palette: Palette = LIGHT):
         enable_dpi_awareness()
+        _set_app_user_model_id(f"MKGA.{getattr(ctx, 'mod_id', '') or 'app'}")
         self.ctx = ctx
         self.root = tk.Tk()
         self.theme = apply_theme(self.root, palette)
@@ -64,7 +80,7 @@ class WindowBase:
         self.root.after(40, self._pump)
 
     def _set_window_icon(self) -> None:
-        """Значок окна и панели задач (рисуется растеризатором, без файлов)."""
+        """Значок окна и панели задач (рисуется растеризатором, без готовых файлов)."""
         try:
             from . import icon
             photo = tk.PhotoImage(master=self.root, data=__import__("base64").b64encode(icon.png_bytes(64)).decode("ascii"))
@@ -72,6 +88,14 @@ class WindowBase:
             self.theme.images.append(photo)  # без ссылки Tk удалил бы картинку
         except tk.TclError:  # значок необязателен: нет его, нет и ошибки
             pass
+        if os.name == "nt":
+            # .ico надёжнее для панели задач Windows: без него у окон, запущенных через python.exe, остаётся значок Python
+            try:
+                from . import icon
+                path = icon.write_ico(Path(tempfile.gettempdir()) / "mkga" / "mkga.ico")
+                self.root.iconbitmap(default=str(path))
+            except (tk.TclError, OSError):
+                pass
 
     # --- строительные блоки интерфейса ---------------------------------------------------------
     def label(self, text: str, icon: str | None = None) -> str:

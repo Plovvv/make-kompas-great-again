@@ -136,8 +136,9 @@ class RealFileCopy(unittest.TestCase):
         d = appdata / "ASCON" / "KOMPAS-3D" / ver
         d.mkdir(parents=True)
         shutil.copy2(src, d / "KOMPAS.kit.config")
-        original = (d / "KOMPAS.kit.config").read_bytes()
         store = BackupStore(tempfile.mkdtemp(), trash=lambda p: None)
+        km.apply([], appdata=appdata, store=store, running=lambda: False)     # в настоящем файле уже могут быть наши пункты
+        original = (d / "KOMPAS.kit.config").read_bytes()
         km.apply(ENTRIES, appdata=appdata, store=store, running=lambda: False)
         added = (d / "KOMPAS.kit.config").read_bytes()
         self.assertGreater(len(added), len(original))
