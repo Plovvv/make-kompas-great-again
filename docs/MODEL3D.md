@@ -33,7 +33,7 @@ with Part.new(kompas) as part:                      # новый скрытый 
 | Вырез | `cut_extrude(sketch, depth=None, direction=...)`: `depth=None` это «через всё» |
 | Вращение | `revolve(sketch, axis="OY", angle=360, cut=False)`: профиль по одну сторону оси |
 | Свойства | `set_properties(name, marking, material+density)`; `set_title(text)` («Наименование», № 5); `set_object_type("Стандартное изделие")` («Тип объекта», № 14); `set_spec_section(25 | 30)` (раздел спецификации: объект спецификации детали + свойство SPCSection) |
-| Грани и резьба | `faces()`, `cylinder_faces(radius)`, `thread(radius, length=None, start_near=(x, y, z))`: «Условное изображение резьбы» (объём не меняется), `start_near` выбирает торцевую кромку, от которой отсчитывается длина |
+| Грани и резьба | `faces()`, `cylinder_faces(radius)`, `thread(radius, length=None, start_near=(x, y, z), face_index=0)`: «Условное изображение резьбы» (объём не меняется), `start_near` выбирает торцевую кромку, от которой отсчитывается длина; `thread_all(radius)` ставит резьбу на каждую цилиндрическую грань этого радиуса (например два глухих отверстия стойки) |
 | Измерения | `mass_g`, `density`, `volume_mm3`, `verify_volume(expected_mm3, rel_tol)`, `planar_area_mm2()`, `verify_planar_area(expected_mm2, rel_tol)` |
 | Сохранение | `save_as(session, path)` (через откат), `close()` (без сохранения) |
 
@@ -78,7 +78,7 @@ with Part.new(kompas) as part:                      # новый скрытый 
     возвращает пустую строку. `IPart7.Standard` и `CreateSpcObjects` молча не записываются.
 12. **Дуга:** `view.Arcs.Add()`, поля `Xc, Yc, Radius, Angle1, Angle2` и `Direction`; **`Direction = False` идёт против
     часовой стрелки** от `Angle1` к `Angle2` (наоборот, чем кажется). Объём шарового сегмента совпал с формулой до 1e-15.
-13. **Условное изображение резьбы:** `top.Threads.Add()`, `BaseObject` = цилиндрическая грань, `AutoDiameter = True`,
+13. **Условное изображение резьбы** (одна `Thread` на каждую грань, `thread_all` для нескольких отверстий; проверено на стойках «гайка-гайка», 2 резьбы): `top.Threads.Add()`, `BaseObject` = цилиндрическая грань, `AutoDiameter = True`,
     `AutoLenght`/`Lenght`. По умолчанию резьба идёт от «первой» кромки (у винта это головка). Чтобы вести от конца,
     присвойте `InitialBorder` = ребро грани со стороны конца (`face.LimitingEdges`, `IEdge.GetPoint`); `Direction`,
     `LeftThread` и порядок точек профиля на это не влияют. Границы резьбы читает `GetLimitPoints` (выходные double).
