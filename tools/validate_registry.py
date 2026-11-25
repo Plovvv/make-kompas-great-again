@@ -5,10 +5,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from mkga.console import ensure_utf8_output  # noqa: E402
 from mkga.registry import RegistryError, load_registry  # noqa: E402
 
 
 def main() -> int:
+    ensure_utf8_output()  # в CI на Windows вывод идёт не в UTF-8
     path = Path(__file__).resolve().parent.parent / "registry" / "registry.json"
     try:
         entries = load_registry(path)

@@ -9,6 +9,7 @@ import traceback
 from pathlib import Path
 
 from . import __version__
+from .console import ensure_utf8_output
 from .core.kompas import KompasError
 from .core.safe_io import BackupStore, SafeIOError
 from .guard import check_path, violations
@@ -104,6 +105,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    ensure_utf8_output()  # перенаправленный вывод (CI, запуск из хаба) на Windows иначе падает на русском
     args = build_parser().parse_args(argv)
     mods_dir = args.mods_dir or default_mods_dir()
     try:

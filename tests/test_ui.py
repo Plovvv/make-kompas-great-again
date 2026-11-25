@@ -95,7 +95,7 @@ class DemoWindowTests(unittest.TestCase):
 
     def test_version_warning_asks_user_in_main_thread(self):
         self.win.ctx.tested_versions = [23]  # КОМПАС v24 «новее проверенного»: нужно подтверждение
-        with mock.patch("mkga.ui.window.messagebox.askyesno", return_value=True) as ask:
+        with mock.patch("mkga.ui.base.messagebox.askyesno", return_value=True) as ask:
             self.win.check_kompas()
             self.win.wait_idle()
         self.assertEqual(ask.call_count, 1)
@@ -103,7 +103,7 @@ class DemoWindowTests(unittest.TestCase):
 
     def test_version_warning_declined_blocks_connection(self):
         self.win.ctx.tested_versions = [23]
-        with mock.patch("mkga.ui.window.messagebox.askyesno", return_value=False):
+        with mock.patch("mkga.ui.base.messagebox.askyesno", return_value=False):
             self.win.check_kompas()
             self.win.wait_idle()
         self.assertIn("не подключён", self.win._kompas_var.get())
@@ -129,6 +129,7 @@ class ThemeTests(unittest.TestCase):
                 for prefix, around in (("", palette.bg), ("Card.", palette.surface)):
                     for base in ("TButton", "Primary.TButton", "Ghost.TButton", "TEntry", "TCombobox",
                                  "Horizontal.TProgressbar", "PillOk.TLabel", "PillError.TLabel", "PillMuted.TLabel",
+                                 "PillAccent.TLabel", "Nav.TButton", "NavActive.TButton",
                                  "TCheckbutton", "TRadiobutton"):
                         for state in ("active", "pressed", "focus", "readonly", "disabled", "selected"):
                             got = str(style.lookup(prefix + base, "background", [state]))

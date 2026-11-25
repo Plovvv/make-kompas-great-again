@@ -74,6 +74,26 @@ DARK = Palette(
 )
 
 
+def system_palette() -> Palette:
+    """Палитра по системной теме Windows (Параметры, Персонализация, Цвета); вне Windows светлая."""
+    if sys.platform != "win32":
+        return LIGHT
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as key:
+            light, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        return LIGHT if light else DARK
+    except OSError:
+        return LIGHT
+
+
+def palette_by_name(name: str) -> Palette:
+    """'light' | 'dark' | 'system' -> палитра (неизвестное имя даёт системную)."""
+    return {"light": LIGHT, "dark": DARK}.get(name) or system_palette()
+
+
 def enable_dpi_awareness() -> bool:
     """Включить поддержку высокого DPI в Windows, чтобы окно не размывалось.
 
@@ -248,6 +268,18 @@ def apply_theme(root: tk.Tk, palette: Palette = LIGHT) -> Theme:
                             borderwidth=0, anchor="center", font=heading if base.startswith("Primary") else default)
             style.map(name, foreground=[("disabled", p.disabled_text)], background=[("disabled", around)])
 
+    # Боковая навигация: пункт и выбранный пункт (текст слева, выбранный залит мягким акцентом)
+    button_element("Mkga.Nav.bg", (p.bg, p.bg), (p.accent_soft, p.accent_soft), (p.border, p.border),
+                   (p.bg, p.bg), p.accent)
+    button_element("Mkga.NavActive.bg", (p.accent_soft, p.accent_soft), (p.accent_soft, p.accent_soft),
+                   (p.accent_soft, p.accent_soft), (p.accent_soft, p.accent_soft), p.accent)
+    for name, element, fg, fnt in (("Nav.TButton", "Mkga.Nav.bg", p.text, default),
+                                   ("NavActive.TButton", "Mkga.NavActive.bg", p.accent, heading)):
+        button_layout(name, element)
+        style.configure(name, padding=(px(16), px(11)), foreground=fg, background=p.bg, relief="flat",
+                        borderwidth=0, anchor="w", font=fnt)
+        style.map(name, foreground=[("disabled", p.disabled_text)])
+
     # Поля ввода
     r = px(rad)
     fld_n, _ = box(p.surface, p.border_strong, rad, bw)
@@ -306,6 +338,7 @@ def apply_theme(root: tk.Tk, palette: Palette = LIGHT) -> Theme:
     style.configure("Log.Muted.TLabel", background=p.log_bg, foreground=p.log_muted, font=small)
     style.configure("Card.TLabel", background=p.surface, foreground=p.text)
     style.configure("Card.Muted.TLabel", background=p.surface, foreground=p.muted)
+    style.configure("Card.Small.Muted.TLabel", background=p.surface, foreground=p.muted, font=small)
     style.configure("Card.Heading.TLabel", background=p.surface, foreground=p.text, font=heading)
 
     # Метки
@@ -331,6 +364,7 @@ def apply_theme(root: tk.Tk, palette: Palette = LIGHT) -> Theme:
     pill("PillOk", p.ok_soft, p.ok)
     pill("PillError", p.error_soft, p.error)
     pill("PillMuted", p.disabled_bg, p.muted)
+    pill("PillAccent", p.accent_soft, p.accent)
 
     # Флажки и переключатели
     ind = px(18)
@@ -447,8 +481,9 @@ def apply_theme(root: tk.Tk, palette: Palette = LIGHT) -> Theme:
     # disabled. Он закрасил бы скруглённые углы, поэтому фон виджета закрепляется во ВСЕХ состояниях.
     pinned_states = ("disabled", "readonly", "active", "pressed", "focus", "selected")
     for prefix, around in (("", p.bg), ("Card.", p.surface)):
-        for base in ("TButton", "Primary.TButton", "Ghost.TButton", "TEntry", "TCombobox", "Horizontal.TProgressbar",
-                     "PillOk.TLabel", "PillError.TLabel", "PillMuted.TLabel", "TCheckbutton", "TRadiobutton"):
+        for base in ("TButton", "Primary.TButton", "Ghost.TButton", "Nav.TButton", "NavActive.TButton", "TEntry", "TCombobox", "Horizontal.TProgressbar",
+                     "PillOk.TLabel", "PillError.TLabel", "PillMuted.TLabel", "PillAccent.TLabel", "TCheckbutton",
+                     "TRadiobutton"):
             style.map(prefix + base, background=[(state, around) for state in pinned_states])
 
     theme = Theme(px=px, pad=px(16), pad_small=px(8), palette=p, font_title=title, font_heading=heading,

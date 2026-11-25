@@ -5,9 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-# После создания репозитория на GitHub подставить сюда ссылку вида
-# https://raw.githubusercontent.com/<owner>/<repo>/main/registry/registry.json
-DEFAULT_REGISTRY_URL = ""
+# Реестр модов в репозитории проекта на GitHub (новые моды попадают в него через pull request).
+DEFAULT_REGISTRY_URL = "https://raw.githubusercontent.com/Plovvv/make-kompas-great-again/main/registry/registry.json"
 
 _LOCAL_REGISTRY = Path(__file__).resolve().parent.parent / "registry" / "registry.json"
 
