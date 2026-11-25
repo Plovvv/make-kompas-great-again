@@ -227,6 +227,89 @@ class LiveComponentsTests(unittest.TestCase):
         self.assertEqual(r.path.name, "Штифт ISO 2338 - Ø6 x 20 - m6.m3d")
         self.check_saved(r, object_type="Стандартное изделие", threads=0)
 
+    # --- шлиц и крест, квадратная гайка, стопорные кольца, колпачковые гайки ----------------------------------------------
+    def test_slotted_and_cross_screws(self):
+        for std_id, cases in (("din-84", (("M3", 8), ("M6", 20), ("M10", 40))), ("din-963", (("M3", 8), ("M8", 25), ("M12", 40))),
+                              ("din-965", (("M4", 10), ("M8", 30), ("M16", 50))), ("din-7985", (("M2", 6), ("M6", 20), ("M10", 30)))):
+            for size, length in cases:
+                with self.subTest(standard=std_id, size=size):
+                    r = self.create(std_id, size, length)
+                    self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 1e-6)
+        self.check_saved(self.create("din-965", "M5", 16), object_type="Стандартное изделие", threads=1)
+
+    def test_square_nut_and_domed_nuts(self):
+        for size in ("M5", "M10", "M16"):
+            with self.subTest(size=size):
+                r = self.create("din-557", size)
+                self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 1e-6)
+        for std_id in ("din-986", "din-1587"):
+            for size in ("M6", "M12"):
+                with self.subTest(standard=std_id, size=size):
+                    r = self.create(std_id, size)
+                    self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 3e-2)
+
+    def test_retaining_rings_and_washers(self):
+        for std_id, sizes in (("din-471", ("Ø10", "Ø40", "Ø100")), ("din-472", ("Ø12", "Ø40", "Ø72")), ("din-7980", ("M3", "M12", "M36")),
+                              ("din-125-b", ("M3", "M20")), ("din-433", ("M4", "M24")), ("din-6797", ("M3", "M16"))):
+            for size in sizes:
+                with self.subTest(standard=std_id, size=size):
+                    r = self.create(std_id, size)
+                    self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 1e-6)
+
+    def test_din6912_and_fine_pitch_bolts(self):
+        for size, length in (("M4", 10), ("M10", 30), ("M24", 60)):
+            with self.subTest(size=size):
+                r = self.create("din-6912", size, length)
+                self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 1e-6)
+        for std_id, size, length in (("din-961", "M8x1", 30), ("din-961", "M12x1.5", 50), ("din-960", "M10x1.25", 80), ("din-960", "M16x1.5", 150)):
+            with self.subTest(standard=std_id, size=size):
+                r = self.create(std_id, size, length)
+                self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 3e-2)
+        self.assertEqual(self.create("din-961", "M10x1.25", 30).path.name, "Болт DIN 961 - M10x1,25 x 30.m3d")
+
+    def test_part_with_hand_edited_names(self):
+        from mkga_components.builder import Request, create_part
+        std = self.catalog.standards["din-912"]
+        r = create_part(self.ctx, Request(std, "M8", 25, self.folder, open_after=False, file_stem="Мой винт", title="Винт особый"))
+        self.assertEqual(r.path.name, "Мой винт.m3d")
+        self.assertEqual(r.title, "Винт особый")
+        self.check_saved(r, object_type="Стандартное изделие", threads=1)
+
+    # --- вставки, стойки, Т-гайка, пневматические фитинги ------------------------------------------------------------------
+    def test_inserts_standoffs_and_t_nut(self):
+        for size in ("M3 x 5.7", "M6 x 12.7", "M2 x 2.5"):
+            with self.subTest(insert=size):
+                r = self.create("insert-heatset", size)
+                self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 1e-6)
+        self.assertEqual(r.path.name, "Вставка (вплавляемая) - M2 x 2,5.m3d")
+        for std_id, size, length in (("standoff-hex-mf", "M3", 20), ("standoff-hex-mf", "M5", 25), ("standoff-hex-mf", "M3", 5),
+                                     ("standoff-hex-ff", "M4", 12), ("standoff-hex-ff", "M6", 30)):
+            with self.subTest(standard=std_id, size=size, length=length):
+                r = self.create(std_id, size, length)
+                self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 1e-6)
+        for size in ("M4 паз 6", "M6 паз 8"):
+            with self.subTest(t_nut=size):
+                r = self.create("t-nut-profile", size)
+                self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 1e-6)
+        self.check_saved(self.create("insert-heatset", "M4 x 6.4"), threads=1)
+        self.check_saved(self.create("standoff-hex-ff", "M4", 16), threads=2)
+        self.check_saved(self.create("standoff-hex-mf", "M4", 16), threads=2)
+
+    def test_pneumatic_fittings(self):
+        for size in ("Ø4 M5", "Ø6 G1/8", "Ø8 G1/2", "Ø10 G3/8", "Ø12 G1/4"):
+            with self.subTest(fitting=size):
+                r = self.create("fitting-push-male", size)
+                self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 1e-6)
+                if size == "Ø6 G1/8":
+                    male = r
+        for size in ("Ø4", "Ø8", "Ø12"):
+            with self.subTest(union=size):
+                r = self.create("fitting-push-union", size)
+                self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 1e-6)
+        self.assertEqual(male.path.name, "Фитинг (push-in) - Ø6 G1⁄8.m3d")
+        self.check_saved(male, threads=1)
+        self.assertEqual(self.sections_in_assembly(male.path), [30])             # «Прочие изделия»
+
     def test_every_catalog_standard_builds_with_one_sample_size(self):
         """По одному типоразмеру из каждого стандарта каталога: страховка от опечаток в таблицах."""
         for std in self.catalog.standards.values():

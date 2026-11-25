@@ -447,8 +447,8 @@ def _flange_build(part, dims, length):
 
 # --- шайба пружинная (DIN 127 B): кольцо с разрывом ---------------------------------------------------------------------
 def spring_washer_dims(dims: Mapping[str, float]) -> dict[str, float]:
-    """Размеры кольца: d2 = d1 + 2·b (ширина b по радиусу), толщина s, ширина разрыва = s (условно)."""
-    return {"d1": dims["d1"], "d2": dims["d1"] + 2.0 * dims["b"], "h": dims["s"], "gap": dims["s"]}
+    """Размеры кольца: d2 = d1 + 2·b (ширина b по радиусу), толщина s, ширина разрыва `gap` (по умолчанию s, условно)."""
+    return {"d1": dims["d1"], "d2": dims["d1"] + 2.0 * dims["b"], "h": dims["s"], "gap": dims.get("gap", dims["s"])}
 
 
 def _strip_area(r_in: float, r_out: float, gap: float) -> float:
@@ -464,8 +464,8 @@ def _strip_area(r_in: float, r_out: float, gap: float) -> float:
 def _spring_check(dims, length):
     _need(dims, ("d1", "b", "s"), "пружинная шайба")
     _positive(dims, ("d1", "b", "s"))
-    if dims["s"] >= dims["d1"]:
-        raise ShapeError("разрыв шайбы шире её отверстия")
+    if dims.get("gap", dims["s"]) >= dims["d1"]:
+        raise ShapeError("разрыв кольца шире его отверстия")
 
 
 def _spring_volume(dims, length):
@@ -664,6 +664,261 @@ def _pin_build(part, dims, length):
     _revolve_profile(part, _pin_profile(dims, length))
 
 
+# --- винты со шлицем или крестом (DIN 84, DIN 963, DIN 965, DIN 7985) -------------------------------------------------------
+# Шлиц и крест упрощены: прямоугольные вырезы на плоском верху головки на глубину t, не доходящие до края головки
+# (в стандарте шлиц идёт через всю головку, крест имеет скосы), поэтому объём считается точно по призме.
+def recess_area(dims: Mapping[str, float]) -> float:
+    n, lc = dims["n"], dims["lc"]
+    return 2.0 * n * lc - n * n if dims.get("cross") else n * lc
+
+
+def _recess_check_common(dims, top_radius: float) -> None:
+    _need(dims, ("n", "lc", "t"), "винт со шлицем")
+    _positive(dims, ("n", "lc", "t"))
+    if math.hypot(dims["lc"] / 2.0, dims["n"] / 2.0) >= top_radius:
+        raise ShapeError("шлиц или крест не помещается на верх головки")
+
+
+def _recess_cut(part, dims) -> None:
+    n, lc, t = dims["n"], dims["lc"], dims["t"]
+    with part.sketch("XOZ") as sk:
+        sk.rect(-lc / 2.0, -n / 2.0, lc, n)
+    part.cut_extrude(sk, t, direction="both")
+    if dims.get("cross"):
+        with part.sketch("XOZ") as sk2:
+            sk2.rect(-n / 2.0, -lc / 2.0, n, lc)
+        part.cut_extrude(sk2, t, direction="both")
+
+
+def _flat_head_profile(dims: Mapping[str, float], length: float) -> list[Point]:
+    d, p, dk, k = dims["d"], dims["P"], dims["dk"], dims["k"]
+    return [(0.0, 0.0), (dk / 2, 0.0), (dk / 2, -k), (d / 2, -k), (d / 2, -(k + length - p)), (d / 2 - p, -(k + length)),
+            (0.0, -(k + length))]
+
+
+def _flat_check(dims, length):
+    _need(dims, ("d", "P", "dk", "k"), "винт со шлицем")
+    _positive(dims, ("d", "P", "dk", "k"))
+    if length is None or length <= dims["P"]:
+        raise ShapeError("длина винта должна быть больше шага резьбы")
+    _recess_check_common(dims, dims["dk"] / 2.0)
+    if dims["t"] >= dims["k"]:
+        raise ShapeError("глубина шлица должна быть меньше высоты головки")
+
+
+def _flat_volume(dims, length):
+    return revolved_volume(_flat_head_profile(dims, length)) - recess_area(dims) * dims["t"]
+
+
+def _flat_build(part, dims, length):
+    _revolve_profile(part, _flat_head_profile(dims, length))
+    _recess_cut(part, dims)
+    tip = (dims["d"] / 2, -(dims["k"] + length - dims["P"]), 0.0)
+    b = dims.get("b")
+    part.thread(dims["d"] / 2, None if b is None or b >= length else b, start_near=tip)
+
+
+def _csk_slot_check(dims, length):
+    _need(dims, ("d", "P", "dk", "k"), "винт с потайной головкой")
+    _positive(dims, ("d", "P", "dk", "k"))
+    if _csk_rim(dims) < 0:
+        raise ShapeError("высота головки меньше глубины конуса 90°: размеры dk, k, d не согласованы")
+    if length is None or length <= dims["k"] + dims["P"]:
+        raise ShapeError("длина винта должна быть больше высоты головки плюс шаг резьбы")
+    _need(dims, ("t",), "винт с потайной головкой")
+    _recess_check_common(dims, dims["dk"] / 2.0 - max(0.0, dims["t"] - _csk_rim(dims)))
+    if dims["t"] >= dims["k"]:
+        raise ShapeError("глубина шлица должна быть меньше высоты головки")
+
+
+def _csk_slot_volume(dims, length):
+    return revolved_volume(_csk_profile(dims, length)) - recess_area(dims) * dims["t"]
+
+
+def _csk_slot_build(part, dims, length):
+    _revolve_profile(part, _csk_profile(dims, length))
+    _recess_cut(part, dims)
+    b = dims.get("b")
+    tip = (dims["d"] / 2, -(length - dims["P"]), 0.0)
+    part.thread(dims["d"] / 2, None if b is None or b >= length else b, start_near=tip)
+
+
+# --- гайка квадратная (DIN 557) ------------------------------------------------------------------------------------------
+def _square_nut_check(dims, length):
+    _need(dims, ("d", "P", "s", "m"), "квадратная гайка")
+    _positive(dims, ("d", "P", "s", "m"))
+    if internal_minor_diameter(dims["d"], dims["P"]) >= dims["s"]:
+        raise ShapeError("отверстие не помещается в гайку")
+
+
+def _square_nut_volume(dims, length):
+    bore = internal_minor_diameter(dims["d"], dims["P"])
+    return (dims["s"] ** 2 - math.pi * (bore / 2.0) ** 2) * dims["m"]
+
+
+def _square_nut_build(part, dims, length):
+    s_, m = dims["s"], dims["m"]
+    bore = internal_minor_diameter(dims["d"], dims["P"])
+    with part.sketch("XOZ") as sk:
+        sk.rect(-s_ / 2.0, -s_ / 2.0, s_, s_)
+    part.extrude(sk, m, direction="middle")
+    with part.sketch("XOZ") as hole:
+        hole.circle(0, 0, bore / 2.0)
+    part.cut_extrude(hole, direction="both")
+    part.thread(bore / 2.0)
+
+
+# --- вплавляемая резьбовая вставка (латунь, рифлёная) ----------------------------------------------------------------------
+# Упрощение: наружная поверхность гладкий цилиндр диаметром od (у настоящей вставки рифление), сквозное резьбовое отверстие.
+def _insert_check(dims, length):
+    _need(dims, ("d", "P", "od", "l"), "вставка")
+    _positive(dims, ("d", "P", "od", "l"))
+    if internal_minor_diameter(dims["d"], dims["P"]) >= dims["od"]:
+        raise ShapeError("наружный диаметр вставки меньше диаметра отверстия под резьбу")
+
+
+def _insert_profile(dims) -> list[Point]:
+    rb, ro = internal_minor_diameter(dims["d"], dims["P"]) / 2.0, dims["od"] / 2.0
+    return [(rb, 0.0), (ro, 0.0), (ro, -dims["l"]), (rb, -dims["l"])]
+
+
+def _insert_volume(dims, length):
+    return revolved_volume(_insert_profile(dims))
+
+
+def _insert_build(part, dims, length):
+    _revolve_profile(part, _insert_profile(dims))
+    part.thread(internal_minor_diameter(dims["d"], dims["P"]) / 2.0)
+
+
+# --- стойка шестигранная: штифт-гайка или гайка-гайка ----------------------------------------------------------------------
+# Центр шестигранника в плоскости XOZ: корпус от y = -L/2 до +L/2, штифт идёт вниз, глухие резьбовые отверстия с торцов.
+def _standoff_depths(dims, length) -> tuple[float, float]:
+    """Глубины глухих отверстий сверху и снизу: у «штифт-гайка» только сверху, у «гайка-гайка» поровну на оба торца."""
+    if dims.get("tli2", 0) > 0:
+        each = min(dims["tli"], (length - 1.0) / 2.0)
+        return each, each
+    return min(dims["tli"], length - 1.0), 0.0
+
+
+def _standoff_check(dims, length):
+    _need(dims, ("d", "P", "s", "tli"), "стойка")
+    _positive(dims, ("d", "P", "s", "tli"))
+    if length is None or length < 3.0:
+        raise ShapeError("длина стойки должна быть не меньше 3 мм")
+    if internal_minor_diameter(dims["d"], dims["P"]) >= dims["s"]:
+        raise ShapeError("отверстие не помещается в шестигранник")
+    if dims.get("tlo", 0) > 0 and dims["d"] > dims["s"]:
+        raise ShapeError("штифт толще шестигранника")
+
+
+def _standoff_volume(dims, length):
+    rb = internal_minor_diameter(dims["d"], dims["P"]) / 2.0
+    top, bottom = _standoff_depths(dims, length)
+    stud = math.pi * (dims["d"] / 2.0) ** 2 * dims.get("tlo", 0.0)
+    return hexagon_area(dims["s"]) * length - math.pi * rb ** 2 * (top + bottom) + stud
+
+
+def _standoff_build(part, dims, length):
+    s_, d = dims["s"], dims["d"]
+    rb = internal_minor_diameter(d, dims["P"]) / 2.0
+    top, bottom = _standoff_depths(dims, length)
+    tlo = dims.get("tlo", 0.0)
+    half = length / 2.0
+    with part.sketch("XOZ") as sk:
+        sk.regular_polygon(6, across_flats=s_)
+    part.extrude(sk, length, direction="middle")
+    if tlo > 0:
+        _revolve_profile(part, [(0.0, -half + 0.3), (d / 2.0, -half + 0.3), (d / 2.0, -half - tlo), (0.0, -half - tlo)])
+    _revolve_profile(part, [(0.0, half - top), (rb, half - top), (rb, half + 1.0), (0.0, half + 1.0)], cut=True)
+    if bottom > 0:
+        _revolve_profile(part, [(0.0, -half - 1.0), (rb, -half - 1.0), (rb, -half + bottom), (0.0, -half + bottom)], cut=True)
+    part.thread_all(rb)
+    if tlo > 0:
+        part.thread(d / 2.0)
+
+
+# --- Т-гайка для профиля: прямоугольный брусок с резьбовым отверстием --------------------------------------------------------
+def _tnut_check(dims, length):
+    _need(dims, ("d", "P", "l", "w", "h"), "Т-гайка")
+    _positive(dims, ("d", "P", "l", "w", "h"))
+    if internal_minor_diameter(dims["d"], dims["P"]) >= min(dims["l"], dims["w"]):
+        raise ShapeError("отверстие не помещается в гайку")
+
+
+def _tnut_volume(dims, length):
+    bore = internal_minor_diameter(dims["d"], dims["P"])
+    return (dims["l"] * dims["w"] - math.pi * (bore / 2.0) ** 2) * dims["h"]
+
+
+def _tnut_build(part, dims, length):
+    bore = internal_minor_diameter(dims["d"], dims["P"])
+    with part.sketch("XOZ") as sk:
+        sk.rect(-dims["l"] / 2.0, -dims["w"] / 2.0, dims["l"], dims["w"])
+    part.extrude(sk, dims["h"], direction="middle")
+    with part.sketch("XOZ") as hole:
+        hole.circle(0, 0, bore / 2.0)
+    part.cut_extrude(hole, direction="both")
+    part.thread(bore / 2.0)
+
+
+# --- пневматический фитинг: прямой штуцер с наружной резьбой (push-in) ------------------------------------------------------
+# Центр шестигранника в плоскости XOZ: резьбовая часть вниз, цилиндрический корпус вверх, гнездо под трубку сверху.
+def _fitting_check(dims, length):
+    _need(dims, ("dt", "P", "a", "s", "hh", "db", "l", "tube", "ts"), "фитинг")
+    _positive(dims, ("dt", "P", "a", "s", "hh", "db", "l", "tube", "ts"))
+    if dims["db"] > dims["s"]:
+        raise ShapeError("корпус шире шестигранника")
+    if dims["l"] <= dims["a"] + dims["hh"] + 1.0:
+        raise ShapeError("общая длина l слишком мала для резьбы и шестигранника")
+    if dims["tube"] >= dims["db"] or dims["ts"] >= dims["l"] - dims["a"]:
+        raise ShapeError("гнездо под трубку не помещается в корпус")
+    if dims["dt"] >= dims["s"]:
+        raise ShapeError("резьба шире шестигранника")
+
+
+def _fitting_body_height(dims) -> float:
+    return dims["l"] - dims["a"] - dims["hh"]
+
+
+def _fitting_volume(dims, length):
+    return (hexagon_area(dims["s"]) * dims["hh"] + math.pi * (dims["dt"] / 2.0) ** 2 * dims["a"]
+            + math.pi * (dims["db"] / 2.0) ** 2 * _fitting_body_height(dims)
+            - math.pi * (dims["tube"] / 2.0) ** 2 * dims["ts"])
+
+
+def _fitting_build(part, dims, length):
+    hh, a, db, dt = dims["hh"], dims["a"], dims["db"], dims["dt"]
+    top = hh / 2.0 + _fitting_body_height(dims)
+    with part.sketch("XOZ") as sk:
+        sk.regular_polygon(6, across_flats=dims["s"])
+    part.extrude(sk, hh, direction="middle")
+    _revolve_profile(part, [(0.0, -hh / 2.0 + 0.3), (dt / 2.0, -hh / 2.0 + 0.3), (dt / 2.0, -hh / 2.0 - a), (0.0, -hh / 2.0 - a)])
+    _revolve_profile(part, [(0.0, hh / 2.0 - 0.3), (db / 2.0, hh / 2.0 - 0.3), (db / 2.0, top), (0.0, top)])
+    t = dims["tube"] / 2.0
+    _revolve_profile(part, [(0.0, top - dims["ts"]), (t, top - dims["ts"]), (t, top + 1.0), (0.0, top + 1.0)], cut=True)
+    part.thread(dt / 2.0)
+
+
+# --- пневматический фитинг: прямая муфта трубка-трубка -----------------------------------------------------------------------
+def _union_check(dims, length):
+    _need(dims, ("tube", "db", "l", "ts"), "муфта")
+    _positive(dims, ("tube", "db", "l", "ts"))
+    if dims["tube"] >= dims["db"] or 2.0 * dims["ts"] >= dims["l"]:
+        raise ShapeError("гнёзда под трубку не помещаются в корпус")
+
+
+def _union_volume(dims, length):
+    return math.pi * (dims["db"] / 2.0) ** 2 * dims["l"] - 2.0 * math.pi * (dims["tube"] / 2.0) ** 2 * dims["ts"]
+
+
+def _union_build(part, dims, length):
+    l, db, t, ts = dims["l"], dims["db"], dims["tube"] / 2.0, dims["ts"]
+    _revolve_profile(part, [(0.0, 0.0), (db / 2.0, 0.0), (db / 2.0, -l), (0.0, -l)])
+    _revolve_profile(part, [(0.0, -ts), (t, -ts), (t, 1.0), (0.0, 1.0)], cut=True)
+    _revolve_profile(part, [(0.0, -l + ts), (t, -l + ts), (t, -l - 1.0), (0.0, -l - 1.0)], cut=True)
+
+
 SHAPES: dict[str, Shape] = {
     "cap_screw": Shape("cap_screw", "Винт с цилиндрической головкой и шестигранным углублением",
                        ("d", "P", "dk", "k", "s", "t"), True, "external",
@@ -688,6 +943,24 @@ SHAPES: dict[str, Shape] = {
                        ("d", "P", "dp", "s", "t"), True, "external", _set_check, _set_volume, _set_build),
     "pin_dowel": Shape("pin_dowel", "Цилиндрический штифт с фасками", ("d", "c"), True, "", _pin_check, _pin_volume,
                        _pin_build),
+    "cyl_slot_screw": Shape("cyl_slot_screw", "Винт с плоской цилиндрической головкой и шлицем или крестом",
+                            ("d", "P", "dk", "k", "n", "lc", "t"), True, "external", _flat_check, _flat_volume, _flat_build),
+    "csk_slot_screw": Shape("csk_slot_screw", "Винт с потайной головкой и шлицем или крестом",
+                            ("d", "P", "dk", "k", "n", "lc", "t"), True, "external", _csk_slot_check, _csk_slot_volume,
+                            _csk_slot_build),
+    "nut_square": Shape("nut_square", "Квадратная гайка", ("d", "P", "s", "m"), False, "internal", _square_nut_check,
+                        _square_nut_volume, _square_nut_build),
+    "insert_knurled": Shape("insert_knurled", "Вплавляемая резьбовая вставка (латунь)", ("d", "P", "od", "l"), False, "internal",
+                            _insert_check, _insert_volume, _insert_build),
+    "standoff_hex": Shape("standoff_hex", "Шестигранная стойка (штифт-гайка или гайка-гайка)", ("d", "P", "s", "tli"), True,
+                          "internal", _standoff_check, _standoff_volume, _standoff_build),
+    "t_nut": Shape("t_nut", "Т-гайка для профиля (брусок с резьбовым отверстием)", ("d", "P", "l", "w", "h"), False, "internal",
+                   _tnut_check, _tnut_volume, _tnut_build),
+    "fitting_male": Shape("fitting_male", "Пневматический фитинг: прямой штуцер push-in с наружной резьбой",
+                          ("dt", "P", "a", "s", "hh", "db", "l", "tube", "ts"), False, "external", _fitting_check,
+                          _fitting_volume, _fitting_build),
+    "fitting_union": Shape("fitting_union", "Пневматический фитинг: прямая муфта push-in трубка-трубка",
+                           ("tube", "db", "l", "ts"), False, "", _union_check, _union_volume, _union_build),
     "nut_hex": Shape("nut_hex", "Шестигранная гайка", ("d", "P", "s", "m", "dw"), False, "internal",
                      _nut_check, _nut_volume, _nut_build, volume_tol=3e-2, verify=_nut_verify),
 }

@@ -238,7 +238,7 @@ def draw_spring_washer(dims: Mapping[str, float], length: float | None = None) -
     """Пружинная шайба: вид сбоку (кольцо) и вид сверху с разрывом справа."""
     d1, b, s = dims["d1"], dims["b"], dims["s"]
     d2 = d1 + 2 * b
-    r_in, r_out, gap_w = d1 / 2, d2 / 2, s            # ширина разрыва условно s
+    r_in, r_out, gap_w = d1 / 2, d2 / 2, dims.get("gap", s)     # ширина разрыва условная (по умолчанию s)
     gap = 0.18 * d2
     text = 0.03 * d2 + 0.3
     prims: list = []
@@ -447,9 +447,235 @@ def draw_pin(dims: Mapping[str, float], length: float | None = None) -> Drawing:
     return _finish(prims, [side, end], (("Вид сбоку", "слева"), ("Вид с торца", "справа")))
 
 
+def _recess_lines(cx: float, cy: float, dims: Mapping[str, float]) -> list:
+    """Шлиц (прямоугольник) или крест (два перекрытых прямоугольника) на виде сверху."""
+    n, lc = dims["n"], dims["lc"]
+    if not dims.get("cross"):
+        return _poly([(cx - lc / 2, cy - n / 2), (cx + lc / 2, cy - n / 2), (cx + lc / 2, cy + n / 2), (cx - lc / 2, cy + n / 2)])
+    h, w = lc / 2, n / 2
+    return _poly([(cx - h, cy - w), (cx - w, cy - w), (cx - w, cy - h), (cx + w, cy - h), (cx + w, cy - w), (cx + h, cy - w),
+                  (cx + h, cy + w), (cx + w, cy + w), (cx + w, cy + h), (cx - w, cy + h), (cx - w, cy + w), (cx - h, cy + w)])
+
+
+def draw_recess_screw(dims: Mapping[str, float], length: float, head: str = "cyl") -> Drawing:
+    """Винт со шлицем или крестом: вид сбоку (рисунок под головкой) и вид сверху."""
+    d, p, dk, k, t = (dims[x] for x in ("d", "P", "dk", "k", "t"))
+    length = float(length)
+    csk = head == "csk"
+    shank_end = -length if csk else -(k + length)
+    big = max(dk, abs(shank_end))
+    gap = 0.07 * big
+    text = 0.012 * big + 0.5
+    prims: list = []
+    if csk:
+        rim = k - (dk - d) / 2.0
+        half = [(dk / 2, 0.0)] + ([(dk / 2, -rim)] if rim > 1e-9 else []) + [(d / 2, -k)]
+    else:
+        half = [(dk / 2, 0.0), (dk / 2, -k), (d / 2, -k)]
+    half += [(d / 2, shank_end + p), (d / 2 - p, shank_end)]
+    prims += _poly([(-x, y) for x, y in reversed(half)] + half)
+    lc = dims["lc"]
+    prims += [Line(-lc / 2, 0.0, -lc / 2, -t, HIDDEN), Line(lc / 2, 0.0, lc / 2, -t, HIDDEN),
+              Line(-lc / 2, -t, lc / 2, -t, HIDDEN)]
+    minor = d - 1.082532 * p
+    b = dims.get("b")
+    full = b is None or b >= length
+    y_end = shank_end + (length if full else b)
+    y_top = min(y_end, -k)
+    prims += [Line(-minor / 2, shank_end, -minor / 2, y_top, THIN), Line(minor / 2, shank_end, minor / 2, y_top, THIN)]
+    if not full:
+        prims.append(Line(-d / 2, y_end, d / 2, y_end, OUTLINE))
+    _center_v(prims, 0, gap * 0.6, shank_end - gap * 0.6)
+    dim_h(prims, -dk / 2, dk / 2, 0.0, gap, f"dk {num(dk)}", text)
+    dim_v(prims, -k, 0.0, dk / 2, dk / 2 + gap, f"k {num(k)}", text)
+    dim_v(prims, shank_end, 0.0 if csk else -k, -dk / 2, -dk / 2 - gap, f"l {num(length)}", text)
+    dim_h(prims, -d / 2, d / 2, shank_end, shank_end - gap, f"d {num(d)}", text)
+    side = (-dk / 2 - gap * 2.6, shank_end - gap * 2.0, dk / 2 + gap * 3.6, gap * 1.8)
+    cx = side[2] + gap * 1.2 + dk / 2 + gap
+    cy = -k / 2
+    prims.append(Circle(cx, cy, dk / 2))
+    prims += _recess_lines(cx, cy, dims)
+    _center_h(prims, cx - dk / 2 - gap * 0.6, cx + dk / 2 + gap * 0.6, cy)
+    _center_v(prims, cx, cy - dk / 2 - gap * 0.6, cy + dk / 2 + gap * 0.6)
+    dim_h(prims, cx - dims["n"] / 2, cx + dims["n"] / 2, cy + dims["lc"] / 2, cy + dk / 2 + gap * 0.8, f"n {num(dims['n'])}", text)
+    top = (cx - dk / 2 - gap, cy - dk / 2 - gap, cx + dk / 2 + gap, cy + dk / 2 + gap * 2.0)
+    return _finish(prims, [side, top], (("Вид сбоку", "слева"), ("Вид сверху (шлиц или крест)", "справа")))
+
+
+def draw_cyl_slot_screw(dims, length):
+    return draw_recess_screw(dims, length, "cyl")
+
+
+def draw_csk_slot_screw(dims, length):
+    return draw_recess_screw(dims, length, "csk")
+
+
+def draw_nut_square(dims: Mapping[str, float], length: float | None = None) -> Drawing:
+    d, p, s, m = (dims[x] for x in ("d", "P", "s", "m"))
+    bore = d - 1.082532 * p
+    gap = 0.2 * s
+    text = 0.035 * s + 0.3
+    prims: list = []
+    prims += _poly([(-s / 2, m / 2), (s / 2, m / 2), (s / 2, -m / 2), (-s / 2, -m / 2)])
+    prims += [Line(-bore / 2, m / 2, -bore / 2, -m / 2, HIDDEN), Line(bore / 2, m / 2, bore / 2, -m / 2, HIDDEN),
+              Line(-d / 2, m / 2, -d / 2, -m / 2, HIDDEN), Line(d / 2, m / 2, d / 2, -m / 2, HIDDEN)]
+    _center_v(prims, 0, m / 2 + gap * 0.6, -m / 2 - gap * 0.6)
+    dim_h(prims, -s / 2, s / 2, m / 2, m / 2 + gap, f"s {num(s)}", text)
+    dim_v(prims, -m / 2, m / 2, s / 2, s / 2 + gap, f"m {num(m)}", text)
+    dim_h(prims, -d / 2, d / 2, -m / 2, -m / 2 - gap, f"d {num(d)}", text)
+    side = (-s / 2 - gap * 0.6, -m / 2 - gap * 1.8, s / 2 + gap * 2.8, m / 2 + gap * 1.8)
+    cx = side[2] + gap + s / 2
+    prims += _poly([(cx - s / 2, -s / 2), (cx + s / 2, -s / 2), (cx + s / 2, s / 2), (cx - s / 2, s / 2)])
+    prims += [Circle(cx, 0.0, bore / 2), Circle(cx, 0.0, d / 2, THIN)]
+    _center_h(prims, cx - s / 2 - gap * 0.6, cx + s / 2 + gap * 0.6, 0.0)
+    _center_v(prims, cx, -s / 2 - gap * 0.6, s / 2 + gap * 0.6)
+    top = (cx - s / 2 - gap * 0.6, -s / 2 - gap * 0.6, cx + s / 2 + gap * 0.6, s / 2 + gap * 0.6)
+    return _finish(prims, [side, top], (("Вид сбоку", "слева"), ("Вид сверху", "справа")))
+
+
+def _rect(x1, y1, x2, y2, kind=OUTLINE) -> list[Line]:
+    return _poly([(x1, y1), (x2, y1), (x2, y2), (x1, y2)], kind)
+
+
+def draw_insert(dims: Mapping[str, float], length: float | None = None) -> Drawing:
+    """Вплавляемая вставка: разрез по оси (стенки кольца) и вид сверху."""
+    d, p, od = dims["d"], dims["P"], dims["od"]
+    length = float(dims["l"])
+    bore = d - 1.082532 * p
+    big = max(od, length)
+    gap = 0.22 * big
+    text = 0.04 * big + 0.3
+    prims: list = []
+    prims += _rect(-od / 2, 0.0, od / 2, -length)
+    prims += [Line(-bore / 2, 0.0, -bore / 2, -length, HIDDEN), Line(bore / 2, 0.0, bore / 2, -length, HIDDEN),
+              Line(-d / 2, 0.0, -d / 2, -length, THIN), Line(d / 2, 0.0, d / 2, -length, THIN)]
+    _center_v(prims, 0, gap * 0.5, -length - gap * 0.5)
+    dim_h(prims, -od / 2, od / 2, 0.0, gap, f"od {num(od)}", text)
+    dim_v(prims, -length, 0.0, od / 2, od / 2 + gap, f"l {num(length)}", text)
+    dim_h(prims, -d / 2, d / 2, -length, -length - gap, f"d {num(d)}", text)
+    side = (-od / 2 - gap * 0.6, -length - gap * 1.8, od / 2 + gap * 2.8, gap * 1.8)
+    cx = side[2] + gap + od / 2
+    cy = -length / 2
+    prims += [Circle(cx, cy, od / 2), Circle(cx, cy, bore / 2), Circle(cx, cy, d / 2, THIN)]
+    _center_h(prims, cx - od / 2 - gap * 0.5, cx + od / 2 + gap * 0.5, cy)
+    _center_v(prims, cx, cy - od / 2 - gap * 0.5, cy + od / 2 + gap * 0.5)
+    top = (cx - od / 2 - gap * 0.6, cy - od / 2 - gap * 0.6, cx + od / 2 + gap * 0.6, cy + od / 2 + gap * 0.6)
+    return _finish(prims, [side, top], (("Разрез по оси", "слева"), ("Вид сверху", "справа")))
+
+
+def draw_standoff(dims: Mapping[str, float], length: float | None = None) -> Drawing:
+    """Шестигранная стойка: вид сбоку (корпус, штифт, невидимые отверстия) и вид сверху."""
+    from .shapes import _standoff_depths
+    d, p, s_, tlo = dims["d"], dims["P"], dims["s"], dims.get("tlo", 0.0)
+    length = float(length)
+    bore = d - 1.082532 * p
+    top, bottom = _standoff_depths(dims, length)
+    big = max(s_, length + tlo)
+    gap = 0.12 * big
+    text = 0.02 * big + 0.4
+    prims: list = []
+    prims += _rect(-s_ / 2, 0.0, s_ / 2, -length)
+    if tlo > 0:
+        prims += _poly([(-d / 2, -length), (-d / 2, -length - tlo), (d / 2, -length - tlo), (d / 2, -length)], close=False)
+    for x in (-bore / 2, bore / 2):
+        prims.append(Line(x, 0.0, x, -top, HIDDEN))
+        if bottom > 0:
+            prims.append(Line(x, -length, x, -length + bottom, HIDDEN))
+    _center_v(prims, 0, gap * 0.5, -length - tlo - gap * 0.5)
+    dim_h(prims, -s_ / 2, s_ / 2, 0.0, gap, f"s {num(s_)}", text)
+    dim_v(prims, -length, 0.0, s_ / 2, s_ / 2 + gap, f"L {num(length)}", text)
+    dim_v(prims, -top, 0.0, -s_ / 2, -s_ / 2 - gap, f"гл. {num(top)}", text)
+    if tlo > 0:
+        dim_v(prims, -length - tlo, -length, d / 2 + gap * 0.3, s_ / 2 + gap, f"lo {num(tlo)}", text)
+    side = (-s_ / 2 - gap * 2.4, -length - tlo - gap * 1.4, s_ / 2 + gap * 3.4, gap * 1.8)
+    cx = side[2] + gap + s_ / math.sqrt(3.0)
+    cy = -length / 2
+    corner = s_ / math.sqrt(3.0)
+    prims += _hexagon(cx, cy, s_) + [Circle(cx, cy, bore / 2, HIDDEN), Circle(cx, cy, d / 2, THIN)]
+    _center_h(prims, cx - corner - gap * 0.5, cx + corner + gap * 0.5, cy)
+    _center_v(prims, cx, cy - corner - gap * 0.5, cy + corner + gap * 0.5)
+    topv = (cx - corner - gap * 0.6, cy - corner - gap * 0.6, cx + corner + gap * 0.6, cy + corner + gap * 0.6)
+    return _finish(prims, [side, topv], (("Вид сбоку", "слева"), ("Вид сверху", "справа")))
+
+
+def draw_t_nut(dims: Mapping[str, float], length: float | None = None) -> Drawing:
+    d, p, l, w, h = (dims[x] for x in ("d", "P", "l", "w", "h"))
+    bore = d - 1.082532 * p
+    gap = 0.22 * max(l, w)
+    text = 0.04 * max(l, w) + 0.3
+    prims: list = []
+    prims += _rect(-l / 2, -h / 2, l / 2, h / 2)
+    prims += [Line(-bore / 2, h / 2, -bore / 2, -h / 2, HIDDEN), Line(bore / 2, h / 2, bore / 2, -h / 2, HIDDEN)]
+    _center_v(prims, 0, h / 2 + gap * 0.5, -h / 2 - gap * 0.5)
+    dim_h(prims, -l / 2, l / 2, h / 2, h / 2 + gap, f"l {num(l)}", text)
+    dim_v(prims, -h / 2, h / 2, l / 2, l / 2 + gap, f"h {num(h)}", text)
+    side = (-l / 2 - gap * 0.6, -h / 2 - gap * 1.2, l / 2 + gap * 2.8, h / 2 + gap * 1.8)
+    cx = side[2] + gap + l / 2
+    prims += _rect(cx - l / 2, -w / 2, cx + l / 2, w / 2) + [Circle(cx, 0.0, bore / 2), Circle(cx, 0.0, d / 2, THIN)]
+    _center_h(prims, cx - l / 2 - gap * 0.5, cx + l / 2 + gap * 0.5, 0.0)
+    _center_v(prims, cx, -w / 2 - gap * 0.5, w / 2 + gap * 0.5)
+    dim_v(prims, -w / 2, w / 2, cx + l / 2, cx + l / 2 + gap, f"w {num(w)}", text)
+    top = (cx - l / 2 - gap * 0.6, -w / 2 - gap * 0.6, cx + l / 2 + gap * 2.4, w / 2 + gap * 0.6)
+    return _finish(prims, [side, top], (("Вид сбоку", "слева"), ("Вид сверху", "справа")))
+
+
+def draw_fitting_male(dims: Mapping[str, float], length: float | None = None) -> Drawing:
+    """Штуцер push-in: резьба внизу, шестигранник, корпус и гнездо под трубку вверху."""
+    dt, a, s_, hh, db, l, tube, ts = (dims[x] for x in ("dt", "a", "s", "hh", "db", "l", "tube", "ts"))
+    gap = 0.18 * max(s_, l)
+    text = 0.03 * max(s_, l) + 0.3
+    body_h = l - a - hh
+    prims: list = []
+    # снизу вверх: резьба (от 0 до a), шестигранник (a..a+hh), корпус (до l)
+    y_hex0, y_hex1 = a, a + hh
+    prims += _poly([(-dt / 2, 0.0), (dt / 2, 0.0), (dt / 2, y_hex0), (s_ / 2, y_hex0), (s_ / 2, y_hex1), (db / 2, y_hex1),
+                    (db / 2, l), (-db / 2, l), (-db / 2, y_hex1), (-s_ / 2, y_hex1), (-s_ / 2, y_hex0), (-dt / 2, y_hex0)])
+    prims += _rect(-tube / 2, l - ts, tube / 2, l, HIDDEN)
+    prims += [Line(-s_ / 2, y_hex0, s_ / 2, y_hex0, THIN), Line(-s_ / 2, y_hex1, s_ / 2, y_hex1, THIN)]
+    _center_v(prims, 0, -gap * 0.5, l + gap * 0.5)
+    dim_h(prims, -s_ / 2, s_ / 2, y_hex1, l + gap, f"s {num(s_)}", text)
+    dim_v(prims, 0.0, l, s_ / 2, s_ / 2 + gap, f"l {num(l)}", text)
+    dim_v(prims, 0.0, a, -s_ / 2, -s_ / 2 - gap, f"a {num(a)}", text)
+    dim_h(prims, -dt / 2, dt / 2, 0.0, -gap, f"d {num(dt)}", text)
+    side = (-s_ / 2 - gap * 2.4, -gap * 1.8, s_ / 2 + gap * 3.4, l + gap * 2.4)
+    cx = side[2] + gap + s_ / math.sqrt(3.0)
+    cy = l / 2
+    corner = s_ / math.sqrt(3.0)
+    prims += _hexagon(cx, cy, s_) + [Circle(cx, cy, db / 2, THIN), Circle(cx, cy, tube / 2, HIDDEN)]
+    _center_h(prims, cx - corner - gap * 0.5, cx + corner + gap * 0.5, cy)
+    _center_v(prims, cx, cy - corner - gap * 0.5, cy + corner + gap * 0.5)
+    dim_h(prims, cx - tube / 2, cx + tube / 2, cy, cy + corner + gap * 0.3, f"трубка {num(tube)}", text)
+    topv = (cx - corner - gap * 0.6, cy - corner - gap * 0.6, cx + corner + gap * 0.6, cy + corner + gap * 1.2)
+    return _finish(prims, [side, topv], (("Вид сбоку (резьба внизу)", "слева"), ("Вид сверху", "справа")))
+
+
+def draw_fitting_union(dims: Mapping[str, float], length: float | None = None) -> Drawing:
+    tube, db, l, ts = (dims[x] for x in ("tube", "db", "l", "ts"))
+    gap = 0.2 * max(db, l)
+    text = 0.03 * max(db, l) + 0.3
+    prims: list = []
+    prims += _rect(-db / 2, 0.0, db / 2, -l)
+    prims += _rect(-tube / 2, 0.0, tube / 2, -ts, HIDDEN) + _rect(-tube / 2, -l, tube / 2, -l + ts, HIDDEN)
+    _center_v(prims, 0, gap * 0.5, -l - gap * 0.5)
+    dim_h(prims, -db / 2, db / 2, 0.0, gap, f"D {num(db)}", text)
+    dim_v(prims, -l, 0.0, db / 2, db / 2 + gap, f"l {num(l)}", text)
+    side = (-db / 2 - gap * 0.6, -l - gap * 0.8, db / 2 + gap * 2.8, gap * 1.8)
+    cx = side[2] + gap + db / 2
+    cy = -l / 2
+    prims += [Circle(cx, cy, db / 2), Circle(cx, cy, tube / 2, HIDDEN)]
+    _center_h(prims, cx - db / 2 - gap * 0.5, cx + db / 2 + gap * 0.5, cy)
+    _center_v(prims, cx, cy - db / 2 - gap * 0.5, cy + db / 2 + gap * 0.5)
+    dim_h(prims, cx - tube / 2, cx + tube / 2, cy, cy + db / 2 + gap * 0.5, f"трубка {num(tube)}", text)
+    topv = (cx - db / 2 - gap * 0.6, cy - db / 2 - gap * 0.6, cx + db / 2 + gap * 0.6, cy + db / 2 + gap * 1.2)
+    return _finish(prims, [side, topv], (("Вид сбоку", "слева"), ("Вид с торца", "справа")))
+
+
 DRAWERS = {"cap_screw": draw_cap_screw, "csk_screw": draw_csk_screw, "button_screw": draw_button_screw, "flange_button_screw": draw_flange_screw,
            "washer_flat": draw_washer, "washer_spring": draw_spring_washer, "nut_hex": draw_nut_hex,
-           "hex_bolt": draw_hex_bolt, "nut_nyloc": draw_nut_nyloc, "set_screw": draw_set_screw, "pin_dowel": draw_pin}
+           "hex_bolt": draw_hex_bolt, "nut_nyloc": draw_nut_nyloc, "set_screw": draw_set_screw, "pin_dowel": draw_pin,
+           "cyl_slot_screw": draw_cyl_slot_screw, "csk_slot_screw": draw_csk_slot_screw, "nut_square": draw_nut_square,
+           "insert_knurled": draw_insert, "standoff_hex": draw_standoff, "t_nut": draw_t_nut,
+           "fitting_male": draw_fitting_male, "fitting_union": draw_fitting_union}
 
 # расшифровка букв размеров для подсказки в окне (буква, что это, ключ в таблице)
 LEGENDS: dict[str, list[tuple[str, str, str]]] = {
@@ -472,6 +698,24 @@ LEGENDS: dict[str, list[tuple[str, str, str]]] = {
     "hex_bolt": [("d", "диаметр резьбы", "d"), ("P", "шаг резьбы", "P"), ("s", "размер под ключ", "s"),
                  ("k", "высота головки", "k"), ("dw", "начало фаски (диаметр)", "dw"), ("b", "длина резьбы от конца", "b"),
                  ("l", "длина под головкой", "")],
+    "cyl_slot_screw": [("d", "диаметр резьбы", "d"), ("P", "шаг резьбы", "P"), ("dk", "диаметр головки", "dk"),
+                       ("k", "высота головки", "k"), ("n", "ширина шлица или луча креста", "n"),
+                       ("lc", "длина шлица или луча", "lc"), ("t", "глубина шлица", "t"), ("l", "длина под головкой", "")],
+    "csk_slot_screw": [("d", "диаметр резьбы", "d"), ("P", "шаг резьбы", "P"), ("dk", "диаметр головки", "dk"),
+                       ("k", "высота головки", "k"), ("n", "ширина шлица или луча креста", "n"),
+                       ("lc", "длина шлица или луча", "lc"), ("t", "глубина шлица", "t"), ("l", "длина с головкой", "")],
+    "insert_knurled": [("d", "резьба", "d"), ("P", "шаг резьбы", "P"), ("od", "наружный диаметр", "od"), ("l", "длина", "l")],
+    "standoff_hex": [("d", "резьба", "d"), ("P", "шаг резьбы", "P"), ("s", "размер под ключ", "s"),
+                     ("tli", "наибольшая глубина резьбы в торце", "tli"), ("tlo", "длина штифта (0: гайка-гайка)", "tlo"),
+                     ("L", "длина корпуса", "")],
+    "t_nut": [("d", "резьба", "d"), ("P", "шаг резьбы", "P"), ("l", "длина", "l"), ("w", "ширина", "w"), ("h", "высота", "h")],
+    "fitting_male": [("dt", "наружный диаметр резьбы", "dt"), ("P", "шаг резьбы", "P"), ("a", "длина резьбы", "a"),
+                     ("s", "размер под ключ", "s"), ("hh", "высота шестигранника", "hh"), ("db", "диаметр корпуса", "db"),
+                     ("l", "общая длина", "l"), ("tube", "наружный диаметр трубки", "tube"), ("ts", "глубина гнезда под трубку", "ts")],
+    "fitting_union": [("tube", "наружный диаметр трубки", "tube"), ("db", "диаметр корпуса", "db"), ("l", "общая длина", "l"),
+                      ("ts", "глубина гнезда под трубку", "ts")],
+    "nut_square": [("d", "диаметр резьбы", "d"), ("P", "шаг резьбы", "P"), ("s", "сторона квадрата", "s"),
+                   ("m", "высота гайки", "m")],
     "set_screw": [("d", "диаметр резьбы", "d"), ("P", "шаг резьбы", "P"), ("dp", "диаметр конца (торца или вершины)", "dp"),
                   ("s", "размер под ключ", "s"), ("t", "глубина под ключ", "t"), ("l", "длина", "")],
     "pin_dowel": [("d", "диаметр", "d"), ("c", "фаска на торцах", "c"), ("l", "длина", "")],
@@ -492,7 +736,9 @@ def legend(shape_id: str, dims: Mapping[str, float], length: float | None) -> li
     """Строки «буква, смысл, значение» для таблицы рядом с чертежом."""
     rows = []
     for letter, meaning, key in LEGENDS.get(shape_id, []):
-        value = length if letter == "l" else dims.get(key)
+        if key and key not in dims:        # необязательный размер (например длина резьбы b у винта с резьбой на всю длину)
+            continue
+        value = length if (letter in ("l", "L") and not key) else dims.get(key)
         rows.append((letter, meaning, "" if value is None else num(value)))
     return rows
 

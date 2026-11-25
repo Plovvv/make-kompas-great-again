@@ -374,8 +374,16 @@ class Part:
                              f"на {err:.2e} (допуск {rel_tol:.0e})")
         return got
 
+    def thread_all(self, radius: float) -> int:
+        """Условное изображение резьбы на КАЖДОЙ цилиндрической грани данного радиуса (например два глухих отверстия)."""
+        count = len(self.cylinder_faces(radius))
+        for i in range(count):
+            self.thread(radius, face_index=i)
+        return count
+
     def thread(self, radius: float, length: float | None = None, *,
-               start_near: tuple[float, float, float] | None = None) -> tuple[float, float, float, float, float, float]:
+               start_near: tuple[float, float, float] | None = None,
+               face_index: int = 0) -> tuple[float, float, float, float, float, float]:
         """Условное изображение резьбы на цилиндре радиуса `radius` (мм): тонкая окружность на виде, объём не меняется.
 
         length=None: на всю длину цилиндра. Иначе резьба длиной `length` отсчитывается от торцевой кромки цилиндра,
@@ -386,7 +394,7 @@ class Part:
         faces = self.cylinder_faces(radius)
         if not faces:
             raise ModelError(f"нет цилиндрической поверхности радиуса {radius:g} мм для резьбы")
-        face = faces[0]
+        face = faces[min(face_index, len(faces) - 1)]
         border = self._nearest_edge(face, start_near) if start_near is not None else None
         with com_errors("условное изображение резьбы"):
             t = self.top.Threads.Add()

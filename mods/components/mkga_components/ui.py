@@ -18,7 +18,7 @@ from mkga.ui.theme import LIGHT, Palette
 
 from . import drawing
 from .builder import BuildError, Request, create_part, plan
-from .catalog import Catalog, Standard, fmt_number, load_catalog, size_display
+from .catalog import Catalog, Standard, fmt_number, load_catalog, safe_filename, size_display
 
 NO_CLASS = "не указывать"
 
@@ -30,12 +30,13 @@ def default_folder() -> Path:
 
 class ComponentsWindow(WindowBase):
     def __init__(self, ctx, catalog: Catalog, *, version: str = "", palette: Palette = LIGHT,
-                 user_dir: Path | None = None, builtin_dir: Path | None = None):
+                 user_dir: Path | None = None, builtin_dir: Path | None = None, names_file: Path | None = None):
         super().__init__(ctx, "Каталог комплектующих: MKGA (неофициальный)", size=(1260, 800), min_size=(1020, 640),
                          palette=palette)
         self.catalog = catalog
         self.user_dir = user_dir
         self.builtin_dir = builtin_dir
+        self.names_file = names_file          # свои имена стандартов (names.json)
         self.version = version
         self.std: Standard | None = None
         self._tree_ids: dict[str, str] = {}
@@ -53,6 +54,9 @@ class ComponentsWindow(WindowBase):
         self.file_var = tk.StringVar()
         self.title_var = tk.StringVar()
         self.section_var = tk.StringVar()
+        self.file_note_var = tk.StringVar()
+        self._file_auto = self._title_auto = ""      # что подставлено автоматически
+        self._manual_file = self._manual_title = False   # пользователь правил имя вручную
         self._build()
         self._fill_tree()
         for problem in catalog.problems:
@@ -87,7 +91,7 @@ class ComponentsWindow(WindowBase):
         self._build_drawing_card(body).grid(row=0, column=2, sticky="nsew")
         self._build_create_card(body).grid(row=1, column=0, columnspan=3, sticky="ew", pady=(t.pad_small, 0))
 
-        self.build_log_card(root, height=2).grid(row=2, column=0, sticky="ew", padx=t.pad, pady=(t.pad_small, 0))
+        self.build_log_card(root, height=1).grid(row=2, column=0, sticky="ew", padx=t.pad, pady=(t.pad_small, 0))
         self.build_footer(root).grid(row=3, column=0, sticky="ew")
         self.add_action("Создать деталь", self._create, primary=True, icon="play")
         self.add_action("Свои детали…", self._custom, icon="info")
@@ -124,7 +128,9 @@ class ComponentsWindow(WindowBase):
         card.columnconfigure(0, weight=1)
         card.columnconfigure(1, weight=1)
         wrap = t.px(340)
-        ttk.Label(card, text="Параметры", style="Card.Heading.TLabel").grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(card, text="Параметры", style="Card.Heading.TLabel").grid(row=0, column=0, sticky="w")
+        head_buttons = ttk.Frame(card, style="CardInner.TFrame", padding=0)
+        head_buttons.grid(row=0, column=1, sticky="e")
         self.std_title = ttk.Label(card, style="Card.TLabel", wraplength=wrap, justify="left")
         self.std_title.grid(row=1, column=0, columnspan=2, sticky="w", pady=(t.pad_small, 0))
         self.std_aliases = ttk.Label(card, style="Card.Small.Muted.TLabel", wraplength=wrap, justify="left")
@@ -134,14 +140,16 @@ class ComponentsWindow(WindowBase):
         self.length_label, self.length_box = self._combo(card, 3, 1, "Длина, мм", self.length_var)
         self.class_label, self.class_box = self._combo(card, 5, 0, "Класс прочности", self.class_var, span=2)
         self.size_box.bind("<<ComboboxSelected>>", lambda e: self._on_size_changed())
-        self.length_box.bind("<<ComboboxSelected>>", lambda e: self._refresh_preview())
-        self.class_box.bind("<<ComboboxSelected>>", lambda e: self._refresh_preview())
+        self.length_box.bind("<<ComboboxSelected>>", lambda e: self._params_changed())
+        self.class_box.bind("<<ComboboxSelected>>", lambda e: self._params_changed())
 
         self.std_verified = ttk.Label(card, style="Card.TLabel", wraplength=wrap, justify="left")
         self.std_verified.grid(row=7, column=0, columnspan=2, sticky="w", pady=(t.pad, 0))
-        info = ttk.Button(card, text="Источник и допущения…", style="Card.Ghost.TButton", command=self._show_source)
-        info.grid(row=8, column=0, columnspan=2, sticky="w", pady=(t.px(4), 0))
-        self._buttons.append(info)
+        info = ttk.Button(head_buttons, text="Источник…", style="Card.Ghost.TButton", command=self._show_source)
+        info.pack(side="left")
+        names = ttk.Button(head_buttons, text="Свои имена…", style="Card.Ghost.TButton", command=self._edit_names)
+        names.pack(side="left", padx=(t.px(4), 0))
+        self._buttons += [info, names]
         card.rowconfigure(9, weight=1)
         return card
 
@@ -162,9 +170,9 @@ class ComponentsWindow(WindowBase):
         top = ttk.Frame(card, style="CardInner.TFrame", padding=0)
         top.grid(row=0, column=0, sticky="ew")
         top.columnconfigure(0, weight=1)
-        ttk.Label(top, text="Чертёж (упрощённый)", style="Card.Heading.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(top, text="Чертёж", style="Card.Heading.TLabel").grid(row=0, column=0, sticky="w")
         self.views_hint = ttk.Label(top, style="Card.Small.Muted.TLabel")
-        self.views_hint.grid(row=0, column=1, sticky="e")
+        self.views_hint.grid(row=1, column=0, columnspan=2, sticky="w")
         self.canvas = tk.Canvas(card, background=self.theme.palette.surface, highlightthickness=0, borderwidth=0)
         self.canvas.grid(row=1, column=0, sticky="nsew", pady=(t.pad_small, 0))
         self.canvas.bind("<Configure>", lambda e: self._schedule_redraw())
@@ -179,10 +187,28 @@ class ComponentsWindow(WindowBase):
         card = t.card(parent, padding=t.pad_small + t.px(4))
         card.columnconfigure(1, weight=3)
         card.columnconfigure(4, weight=2)
-        rows = (("Файл", self.file_var), ("Наименование", self.title_var), ("Раздел спецификации", self.section_var))
-        for i, (name, var) in enumerate(rows):
-            ttk.Label(card, text=name, style="Card.Muted.TLabel").grid(row=i, column=0, sticky="w", padx=(0, t.pad))
-            ttk.Label(card, textvariable=var, style="Card.TLabel").grid(row=i, column=1, sticky="w")
+        ttk.Label(card, text="Файл", style="Card.Muted.TLabel").grid(row=0, column=0, sticky="w", padx=(0, t.pad))
+        file_row = ttk.Frame(card, style="CardInner.TFrame", padding=0)
+        file_row.grid(row=0, column=1, sticky="ew")
+        file_row.columnconfigure(0, weight=1)
+        self.file_entry = ttk.Entry(file_row, textvariable=self.file_var, style="Card.TEntry")
+        self.file_entry.grid(row=0, column=0, sticky="ew")
+        ttk.Label(file_row, textvariable=self.file_note_var, style="Card.Small.Muted.TLabel").grid(
+            row=0, column=1, sticky="w", padx=(t.px(4), 0))
+        ttk.Label(card, text="Наименование", style="Card.Muted.TLabel").grid(
+            row=1, column=0, sticky="w", padx=(0, t.pad), pady=(t.px(4), 0))
+        self.title_entry = ttk.Entry(card, textvariable=self.title_var, style="Card.TEntry")
+        self.title_entry.grid(row=1, column=1, sticky="ew", pady=(t.px(4), 0))
+        for entry in (self.file_entry, self.title_entry):
+            entry.bind("<KeyRelease>", lambda e: self._on_name_edited())
+        ttk.Label(card, text="Раздел спецификации", style="Card.Muted.TLabel").grid(
+            row=2, column=0, sticky="w", padx=(0, t.pad), pady=(t.px(4), 0))
+        section_row = ttk.Frame(card, style="CardInner.TFrame", padding=0)
+        section_row.grid(row=2, column=1, sticky="ew", pady=(t.px(4), 0))
+        ttk.Label(section_row, textvariable=self.section_var, style="Card.TLabel").pack(side="left")
+        reset = ttk.Button(section_row, text="Имена по стандарту", style="Card.Ghost.TButton", command=self._reset_names)
+        reset.pack(side="right")
+        self._buttons.append(reset)
         ttk.Separator(card, orient="vertical").grid(row=0, column=2, rowspan=3, sticky="ns", padx=t.pad)
         right = ttk.Frame(card, style="CardInner.TFrame", padding=0)
         right.grid(row=0, column=3, rowspan=3, columnspan=2, sticky="nsew")
@@ -233,7 +259,12 @@ class ComponentsWindow(WindowBase):
         self.ctx.settings.set("last_standard", std_id)
         self._focus_tree(std_id)
         self.std_title.configure(text=f"{std.full_name} {std.number}")
-        self.std_aliases.configure(text=("Аналоги: " + "; ".join(std.aliases)) if std.aliases else "")
+        aliases = ("Аналоги: " + "; ".join(std.aliases)) if std.aliases else ""
+        if std.is_renamed:
+            was = std.defaults
+            aliases = (aliases + "\n" if aliases else "") + f"Имена изменены вами (по стандарту: «{was[1]} {was[0]}»)"
+        self.std_aliases.configure(text=aliases)
+        self._manual_file = self._manual_title = False
         if std.verified:
             self.std_verified.configure(text="✓ Таблица сверена с оригиналом стандарта", foreground=self.theme.palette.ok)
         else:
@@ -257,7 +288,13 @@ class ComponentsWindow(WindowBase):
         text = self.size_var.get().replace(",", ".")
         return text if self.std and text in self.std.sizes else None
 
+    def _params_changed(self) -> None:
+        """Сменили длину или класс: имена снова считаются по стандарту (правка вручную относилась к прежней детали)."""
+        self._manual_file = self._manual_title = False
+        self._refresh_preview()
+
     def _on_size_changed(self) -> None:
+        self._manual_file = self._manual_title = False
         std, size = self.std, self._current_size()
         if not std or not size:
             return
@@ -302,17 +339,34 @@ class ComponentsWindow(WindowBase):
             names = std.names(size, length, self._strength())
         except KeyError:
             return
-        self.title_var.set(names.title)
+        self._file_auto, self._title_auto = names.file_stem, names.title
+        if not self._manual_file:
+            self.file_var.set(names.file_stem)
+        if not self._manual_title:
+            self.title_var.set(names.title)
         self.section_var.set(std.section_name)
-        folder = Path(self.folder_var.get().strip() or ".")
-        path = folder / f"{names.file_stem}.m3d"
-        note = ""
-        if not folder.is_dir():
-            note = "   (папки нет)"
-        elif path.exists():
-            note = "   (уже есть: будет заменён)"
-        self.file_var.set(f"{path.name}{note}")
+        self._update_file_note()
         self._schedule_redraw()
+
+    def _update_file_note(self) -> None:
+        """Подсказка справа от имени файла: расширение и состояние папки или файла."""
+        folder = Path(self.folder_var.get().strip() or ".")
+        stem = safe_filename(self.file_var.get().removesuffix(".m3d"))
+        note = ".m3d"
+        if not folder.is_dir():
+            note += "   (папки нет)"
+        elif stem and (folder / f"{stem}.m3d").exists():
+            note += "   (уже есть: будет заменён)"
+        self.file_note_var.set(note)
+
+    def _on_name_edited(self) -> None:
+        self._manual_file = self.file_var.get() != self._file_auto
+        self._manual_title = self.title_var.get() != self._title_auto
+        self._update_file_note()
+
+    def _reset_names(self) -> None:
+        self._manual_file = self._manual_title = False
+        self._refresh_preview()
 
     def _fill_dims(self, std: Standard, size: str, length: float | None) -> None:
         """Расшифровка размеров под чертёжом: «буква = значение» и что это, в две колонки."""
@@ -365,7 +419,9 @@ class ComponentsWindow(WindowBase):
         if std is None or size is None:
             raise BuildError("выберите стандарт и типоразмер")
         return Request(std, size, self._length(), Path(self.folder_var.get().strip()), self._strength(),
-                       open_after=bool(self.open_var.get()), overwrite=overwrite)
+                       open_after=bool(self.open_var.get()), overwrite=overwrite,
+                       file_stem=self.file_var.get() if self._manual_file else None,
+                       title=self.title_var.get() if self._manual_title else None)
 
     def _create(self) -> None:
         if self._busy:
@@ -399,6 +455,28 @@ class ComponentsWindow(WindowBase):
 
     def _on_created(self, path: str) -> None:
         self._refresh_preview()   # файл теперь существует: подсказка «будет заменён» актуальна
+
+    def _edit_names(self) -> None:
+        if self.std is not None:
+            from .names import open_names_dialog
+            open_names_dialog(self)
+
+    def save_names(self, std_id: str, fields: dict[str, str] | None) -> None:
+        """Запомнить свои имена стандарта (None: вернуть по умолчанию). Файл пишется через сессию отката."""
+        from .catalog import serialize_name_overrides
+        if self.names_file is None:
+            self.log("Свои имена сохранить некуда: у мода нет папки данных.", tag="error")
+            return
+        overrides = {k: dict(v) for k, v in self.catalog.name_overrides.items()}
+        if fields:
+            overrides[std_id] = fields
+        else:
+            overrides.pop(std_id, None)
+        text = serialize_name_overrides(overrides)
+        with self.ctx.session("Свои имена в каталоге") as session:
+            session.write_text(self.names_file, text)
+        self.reload_catalog(quiet=True)
+        self.log("Свои имена стандарта сохранены." if fields else "Имена стандарта возвращены по умолчанию.", tag="ok")
 
     def _custom(self) -> None:
         from .custom import open_custom_dialog
@@ -446,20 +524,22 @@ class ComponentsWindow(WindowBase):
         self.root.clipboard_append(ai_prompt(self.std))
         self.log("Инструкция для ИИ скопирована в буфер обмена: вставьте её в чат с ИИ.", tag="ok")
 
-    def reload_catalog(self) -> None:
+    def reload_catalog(self, quiet: bool = False) -> None:
         if self.builtin_dir is None:
             return
-        self.catalog = load_catalog(self.builtin_dir, self.user_dir)
+        self.catalog = load_catalog(self.builtin_dir, self.user_dir, self.names_file)
         for problem in self.catalog.problems:
             self.log(f"Каталог: {problem}", tag="error")
         self._fill_tree()
         keep = self.std.id if self.std and self.std.id in self.catalog.standards else None
         if keep or self.catalog.standards:
             self._select_standard(keep or next(iter(sorted(self.catalog.standards))))
-        self.log(f"Каталог обновлён: стандартов {len(self.catalog.standards)}.", tag="ok")
+        if not quiet:
+            self.log(f"Каталог обновлён: стандартов {len(self.catalog.standards)}.", tag="ok")
 
 
 def run_app(ctx, catalog: Catalog, *, version: str = "", user_dir: Path | None = None,
-            builtin_dir: Path | None = None) -> None:
-    win = ComponentsWindow(ctx, catalog, version=version, user_dir=user_dir, builtin_dir=builtin_dir)
+            builtin_dir: Path | None = None, names_file: Path | None = None) -> None:
+    win = ComponentsWindow(ctx, catalog, version=version, user_dir=user_dir, builtin_dir=builtin_dir,
+                           names_file=names_file)
     win.mainloop()

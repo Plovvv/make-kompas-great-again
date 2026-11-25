@@ -11,7 +11,7 @@ from pathlib import Path
 
 from mkga.core.model3d import SPEC_OTHER, SPEC_STANDARD, Part
 
-from .catalog import Standard
+from .catalog import Standard, safe_filename
 from .shapes import ShapeError
 
 
@@ -28,6 +28,8 @@ class Request:
     strength: str | None = None
     open_after: bool = True
     overwrite: bool = False      # разрешено ли заменить существующий файл (со снимком для отката)
+    file_stem: str | None = None  # своё имя файла (без .m3d) вместо рассчитанного по стандарту
+    title: str | None = None      # своё «Наименование» вместо рассчитанного
 
 
 @dataclass(frozen=True)
@@ -72,8 +74,17 @@ def plan(req: Request) -> Plan:
     if not req.folder.is_dir():
         raise BuildError(f"папки нет: {req.folder}")
     names = std.names(req.size, length, req.strength)
-    path = req.folder / f"{names.file_stem}.m3d"
-    return Plan(names.file_stem, names.title, path, path.exists(), std.section_name)
+    file_stem, title = names.file_stem, names.title
+    if req.file_stem is not None:
+        file_stem = safe_filename(req.file_stem.removesuffix(".m3d"))
+        if not file_stem:
+            raise BuildError("имя файла пустое")
+    if req.title is not None:
+        title = req.title.strip()
+        if not title:
+            raise BuildError("«Наименование» пустое")
+    path = req.folder / f"{file_stem}.m3d"
+    return Plan(file_stem, title, path, path.exists(), std.section_name)
 
 
 def create_part(ctx, req: Request) -> Result:

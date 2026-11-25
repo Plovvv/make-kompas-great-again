@@ -149,6 +149,60 @@ class ShapeMathTests(unittest.TestCase):
             SHAPES["nut_hex"].check(dict(d=8, P=1.25, s=13, m=6.5), None)     # нет dw
 
 
+class NameOverrideTests(unittest.TestCase):
+    def test_parse_and_serialize_roundtrip_ignores_junk(self):
+        from mkga_components.catalog import parse_name_overrides, serialize_name_overrides
+        data = parse_name_overrides('{"din-912": {"number": " ISO 4762 ", "x": "y", "kind_name": ""}, "bad": 5}')
+        self.assertEqual(data, {"din-912": {"number": "ISO 4762"}})
+        self.assertEqual(parse_name_overrides(serialize_name_overrides(data)), data)
+        self.assertEqual(parse_name_overrides(""), {})
+        with self.assertRaises(ValueError):
+            parse_name_overrides("[1]")
+
+    def test_catalog_applies_overrides_and_remembers_the_defaults(self):
+        import tempfile
+        from mkga_components.catalog import load_catalog
+        with tempfile.TemporaryDirectory() as tmp:
+            names = Path(tmp) / "names.json"
+            names.write_text('{"din-912": {"number": "ISO 4762", "full_name": "Винт цилиндрический"}, "no-such": {"number": "X"}}',
+                             encoding="utf-8")
+            c = load_catalog(DATA, None, names)
+        std = c.standards["din-912"]
+        self.assertEqual((std.number, std.full_name, std.kind_name), ("ISO 4762", "Винт цилиндрический", "Винт"))
+        self.assertEqual(std.defaults[0], "DIN 912")
+        self.assertEqual(std.names("M8", 25).title, "Винт цилиндрический ISO 4762 - M8 x 25")
+        self.assertNotIn("no-such", c.name_overrides)
+        self.assertFalse(c.standards["din-934"].is_renamed)
+
+    def test_broken_names_file_is_reported_but_does_not_break_the_catalog(self):
+        import tempfile
+        from mkga_components.catalog import load_catalog
+        with tempfile.TemporaryDirectory() as tmp:
+            names = Path(tmp) / "names.json"
+            names.write_text("{oops", encoding="utf-8")
+            c = load_catalog(DATA, None, names)
+        self.assertTrue(any("свои имена" in p for p in c.problems))
+        self.assertEqual(c.standards["din-912"].number, "DIN 912")
+
+    def test_dialog_keeps_only_changed_fields(self):
+        from mkga_components.names import changed_fields
+        std = catalog().standards["din-912"]
+        self.assertEqual(changed_fields(std, {"number": "DIN 912", "kind_name": "Болт", "full_name": "  "}), {"kind_name": "Болт"})
+
+    def test_request_overrides_in_plan(self):
+        import tempfile
+        from mkga_components.builder import BuildError, Request, plan
+        with tempfile.TemporaryDirectory() as tmp:
+            std = catalog().standards["din-912"]
+            p = plan(Request(std, "M8", 25, Path(tmp), file_stem="Свой: винт?.m3d", title="  Моё имя "))
+            self.assertEqual(p.file_stem, "Свой_ винт_")
+            self.assertEqual(p.title, "Моё имя")
+            with self.assertRaises(BuildError):
+                plan(Request(std, "M8", 25, Path(tmp), title="   "))
+            with self.assertRaises(BuildError):
+                plan(Request(std, "M8", 25, Path(tmp), file_stem="..."))
+
+
 class CatalogTests(unittest.TestCase):
     def test_builtin_catalog_loads_without_problems(self):
         c = catalog()
@@ -188,7 +242,8 @@ class CatalogTests(unittest.TestCase):
 
     def test_file_names_never_contain_windows_forbidden_characters(self):
         from mkga_components.catalog import safe_filename
-        self.assertEqual(safe_filename('a/b:c*d?"e<f>g|h'), "a_b_c_d__e_f_g_h")
+        self.assertEqual(safe_filename('a:b*c?"d<e>f|g'), "a_b_c__d_e_f_g")
+        self.assertEqual(safe_filename("Фитинг G1/8"), "Фитинг G1⁄8")      # дробь: «⁄» вместо запрещённой «/»
         self.assertEqual(safe_filename("  имя. "), "имя")
 
     def test_lengths_are_limited_by_the_size_row(self):
@@ -204,7 +259,7 @@ class CatalogTests(unittest.TestCase):
 
     def test_search_by_number_alias_and_name(self):
         c = catalog()
-        self.assertEqual([s.id for s in c.search("912")], ["din-912"])
+        self.assertEqual([s.id for s in c.search("ISO 4762")], ["din-912"])
         self.assertIn("din-912", [s.id for s in c.search("ISO 4762")])
         self.assertIn("din-934", [s.id for s in c.search("гайка")])
         self.assertEqual(len(c.search("")), len(c.standards))
@@ -520,7 +575,9 @@ class WindowTests(unittest.TestCase):
         self.user = self.tmp / "user"
         self.ctx, self.kompas = make_ctx(self.tmp)
         self.ctx.settings.set("folder", str(self.folder))
-        self.win = ComponentsWindow(self.ctx, catalog(), version="0.1.0", user_dir=self.user, builtin_dir=DATA)
+        self.names_file = self.tmp / "data" / "names.json"
+        self.win = ComponentsWindow(self.ctx, catalog(), version="0.1.0", user_dir=self.user, builtin_dir=DATA,
+                                    names_file=self.names_file)
         self.addCleanup(self._cleanup)
 
     def _cleanup(self):
@@ -548,7 +605,8 @@ class WindowTests(unittest.TestCase):
         self.assertIn("25", w.length_box.cget("values"))
         w.length_var.set("40")
         w._refresh_preview()
-        self.assertEqual(w.file_var.get(), "Винт DIN 912 - M8 x 40.m3d")
+        self.assertEqual(w.file_var.get(), "Винт DIN 912 - M8 x 40")
+        self.assertTrue(w.file_note_var.get().startswith(".m3d"))
         self.assertEqual(w.section_var.get(), "Стандартные изделия")
 
     def test_size_change_limits_the_lengths(self):
@@ -575,10 +633,51 @@ class WindowTests(unittest.TestCase):
         w._select_standard("din-912")
         w.class_var.set("12.9")
         w._refresh_preview()
-        self.assertTrue(w.file_var.get().endswith("- 12.9.m3d"))
+        self.assertTrue(w.file_var.get().endswith("- 12.9"))
         w.class_var.set("не указывать")
         w._refresh_preview()
         self.assertNotIn("12.9", w.file_var.get())
+
+    def test_names_can_be_edited_by_hand_and_are_used_for_the_part(self):
+        w = self.win
+        w._select_standard("din-912")
+        w.file_var.set("Мой винт M8")
+        w.title_var.set("Винт мой особенный")
+        w._on_name_edited()
+        w.folder_var.set(str(self.folder))
+        req = w._request()
+        self.assertEqual((req.file_stem, req.title), ("Мой винт M8", "Винт мой особенный"))
+        w.length_var.set("40")
+        w._refresh_preview()
+        self.assertEqual(w.file_var.get(), "Мой винт M8")             # правка сохраняется при смене папки и предпросмотра
+        w._params_changed()                                          # смена длины возвращает автоматические имена
+        self.assertEqual(w.file_var.get(), "Винт DIN 912 - M8 x 40")
+        self.assertIsNone(w._request().file_stem)
+
+    def test_reset_names_button_returns_the_standard_names(self):
+        w = self.win
+        w._select_standard("din-934")
+        w.title_var.set("что-то своё")
+        w._on_name_edited()
+        w._reset_names()
+        self.assertEqual(w.title_var.get(), w.std.names(w._current_size(), w._length()).title)
+
+    def test_saving_own_names_for_a_standard_renames_it_everywhere(self):
+        w = self.win
+        w._select_standard("din-912")
+        w.save_names("din-912", {"number": "ISO 4762", "kind_name": "Болт"})
+        self.assertTrue(self.names_file.is_file())
+        self.assertEqual(w.std.number, "ISO 4762")
+        self.assertTrue(w.std.is_renamed)
+        w.length_var.set("40")
+        w._refresh_preview()
+        self.assertEqual(w.file_var.get(), "Болт ISO 4762 - M8 x 40")
+        self.assertIn("Имена изменены вами", w.std_aliases.cget("text"))
+        self.assertIn("ISO 4762", [w.tree.item(i, "text") for n in w.tree.get_children() for i in w.tree.get_children(n)][0] +
+                      " ".join(w.tree.item(i, "text") for n in w.tree.get_children() for i in w.tree.get_children(n)))
+        w.save_names("din-912", None)                               # вернуть по умолчанию
+        self.assertEqual(w.std.number, "DIN 912")
+        self.assertFalse(w.std.is_renamed)
 
     def test_search_filters_the_tree(self):
         w = self.win
@@ -684,7 +783,7 @@ class ModuleEntryTests(unittest.TestCase):
                 module.run(ctx)
         (_, catalog_arg), kwargs = run_app.call_args
         self.assertIn("din-912", catalog_arg.standards)
-        self.assertEqual(kwargs["version"], "0.4.0")
+        self.assertEqual(kwargs["version"], "0.5.0")
         self.assertEqual(kwargs["user_dir"], Path(ctx.data_dir) / "standards")
 
 

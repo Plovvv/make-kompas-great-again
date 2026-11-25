@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Mapping
 
@@ -49,6 +49,7 @@ def size_display(label: str) -> str:
 
 def safe_filename(text: str) -> str:
     """Имя файла: без символов, запрещённых в Windows, и без хвостовых точек и пробелов."""
+    text = text.replace("/", "⁄")      # дробь G1/8 в имени файла: «⁄» (U+2044) выглядит как косая черта и разрешена в Windows
     return _BAD_FILENAME_CHARS.sub("_", text).strip(" .")
 
 
@@ -76,6 +77,12 @@ class Standard:
     notes: str = ""
     origin: str = "builtin"          # builtin | user
     path: Path | None = field(default=None, compare=False)
+    # Исходные (number, kind_name, full_name), если пользователь переименовал стандарт у себя; иначе None.
+    defaults: tuple[str, str, str] | None = field(default=None, compare=False)
+
+    @property
+    def is_renamed(self) -> bool:
+        return self.defaults is not None
 
     @property
     def shape_obj(self) -> shapes.Shape:
@@ -124,6 +131,7 @@ class Catalog:
     standards: dict[str, Standard] = field(default_factory=dict)
     categories: list[tuple[str, str]] = field(default_factory=list)   # (id, название) в порядке показа
     problems: list[str] = field(default_factory=list)                 # что не загрузилось и почему
+    name_overrides: dict[str, dict[str, str]] = field(default_factory=dict)   # свои имена стандартов (id -> поля)
 
     def in_category(self, category: str) -> list[Standard]:
         return sorted((s for s in self.standards.values() if s.category == category), key=lambda s: s.number)
@@ -214,7 +222,50 @@ def load_standard_file(path: Path, origin: str = "builtin") -> Standard:
     return _from_data(data, origin, path)
 
 
-def load_catalog(builtin_dir: Path, user_dir: Path | None = None) -> Catalog:
+NAME_KEYS = ("number", "kind_name", "full_name")
+
+
+def parse_name_overrides(text: str) -> dict[str, dict[str, str]]:
+    """Свои имена из текста файла names.json: {id: {number, kind_name, full_name}}; лишнее и пустое отбрасывается."""
+    try:
+        raw = json.loads(text) if text.strip() else {}
+    except json.JSONDecodeError as e:
+        raise ValueError(f"names.json: не удалось прочитать ({e})") from e
+    if not isinstance(raw, dict):
+        raise ValueError("names.json: ожидался объект {id стандарта: {...}}")
+    result: dict[str, dict[str, str]] = {}
+    for std_id, fields in raw.items():
+        if not isinstance(fields, dict):
+            continue
+        clean = {k: v.strip() for k, v in fields.items() if k in NAME_KEYS and isinstance(v, str) and v.strip()}
+        if clean:
+            result[str(std_id)] = clean
+    return result
+
+
+def serialize_name_overrides(overrides: Mapping[str, Mapping[str, str]]) -> str:
+    return json.dumps({k: dict(v) for k, v in sorted(overrides.items()) if v}, ensure_ascii=False, indent=2) + "\n"
+
+
+def read_name_overrides(path: Path | None) -> dict[str, dict[str, str]]:
+    if path is None or not Path(path).is_file():
+        return {}
+    return parse_name_overrides(Path(path).read_text(encoding="utf-8-sig"))
+
+
+def apply_name_overrides(catalog: Catalog, overrides: Mapping[str, Mapping[str, str]]) -> None:
+    """Подставить свои имена в стандарты каталога (исходные значения запоминаются для сброса)."""
+    for std_id, fields in overrides.items():
+        std = catalog.standards.get(std_id)
+        if std is None:
+            continue
+        changes = {k: v for k, v in fields.items() if k in NAME_KEYS and v and v != getattr(std, k)}
+        if changes:
+            catalog.standards[std_id] = replace(std, defaults=(std.number, std.kind_name, std.full_name), **changes)
+    catalog.name_overrides = {k: dict(v) for k, v in overrides.items() if k in catalog.standards}
+
+
+def load_catalog(builtin_dir: Path, user_dir: Path | None = None, names_file: Path | None = None) -> Catalog:
     """Загрузить встроенные стандарты и (если есть) пользовательские. Плохой файл не ломает каталог.
 
     Пользовательский стандарт с тем же id заменяет встроенный (так можно поправить таблицу у себя).
@@ -246,4 +297,8 @@ def load_catalog(builtin_dir: Path, user_dir: Path | None = None) -> Catalog:
         if std.category not in known:     # неизвестная папка: показываем отдельно, а не теряем стандарт
             catalog.categories.append((std.category, std.category))
             known.add(std.category)
+    try:
+        apply_name_overrides(catalog, read_name_overrides(names_file))
+    except (OSError, ValueError) as e:
+        catalog.problems.append(f"свои имена не применены: {e}")
     return catalog

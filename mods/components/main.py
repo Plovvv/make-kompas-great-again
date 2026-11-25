@@ -11,5 +11,7 @@ def run(ctx):
     mod_dir = Path(ctx.mod_dir)
     builtin = mod_dir / "data"
     user_dir = Path(ctx.data_dir) / "standards"          # свои детали пользователя (остаются локально)
-    catalog = load_catalog(builtin, user_dir)
-    run_app(ctx, catalog, version=load_manifest(mod_dir).version, user_dir=user_dir, builtin_dir=builtin)
+    names_file = Path(ctx.data_dir) / "names.json"       # свои имена стандартов (меняются в окне, остаются локально)
+    catalog = load_catalog(builtin, user_dir, names_file)
+    run_app(ctx, catalog, version=load_manifest(mod_dir).version, user_dir=user_dir, builtin_dir=builtin,
+            names_file=names_file)
