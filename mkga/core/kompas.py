@@ -67,6 +67,25 @@ def com_errors(what: str) -> Iterator[None]:
         raise
 
 
+@contextmanager
+def com_thread() -> Iterator[None]:
+    """Подготовить ПОТОК к работе с COM: `with com_thread(): ...` (нужно в рабочих потоках окна).
+
+    COM-объекты привязаны к потоку, где созданы: подключаться к КОМПАСу и работать с ним нужно
+    в одном и том же потоке. Без pywin32 ничего не делает (тесты, Linux).
+    """
+    try:
+        import pythoncom
+    except ImportError:
+        yield
+        return
+    pythoncom.CoInitialize()
+    try:
+        yield
+    finally:
+        pythoncom.CoUninitialize()
+
+
 @dataclass
 class Kompas:
     api5: Any            # KompasObject

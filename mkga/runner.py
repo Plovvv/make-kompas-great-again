@@ -69,6 +69,10 @@ class ModContext:
             self._kompas = k
         return self._kompas
 
+    def reset_kompas(self) -> None:
+        """Забыть подключение (следующий ctx.kompas() подключится заново, в текущем потоке)."""
+        self._kompas = None
+
     def _check_version(self, k) -> None:
         if self.tested_versions is None:
             return

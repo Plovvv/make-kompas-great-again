@@ -96,6 +96,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("session_id")
     s.add_argument("--force", action="store_true",
                    help="откатить, даже если файлы изменены после сессии (затрёт эти правки!)")
+    s = sub.add_parser("ui-demo", help="демо окна мода (пишет только во временную папку)")
+    s.add_argument("--fake-kompas", action="store_true", help="не подключаться к настоящему КОМПАСу")
+    s.add_argument("--dark", action="store_true", help="тёмная тема")
     sub.add_parser("gui", help="окно хаба")
     return p
 
@@ -163,6 +166,9 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"  {p}", file=sys.stderr)
                 print("Если уверены, повторите с --force (правки после сессии будут потеряны).", file=sys.stderr)
                 return 1
+        elif args.cmd == "ui-demo":
+            from .ui.demo import run_demo
+            run_demo(fake_kompas=args.fake_kompas, dark=args.dark)
         elif args.cmd == "gui":
             from .gui import launch
             launch(registry_source(args.registry), mods_dir)

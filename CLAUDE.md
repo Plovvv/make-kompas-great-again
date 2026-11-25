@@ -8,7 +8,7 @@
 
 Язык: документация и интерфейс на русском, имена в коде на английском.
 
-Текущий этап: ядро закончено, дальше единый стиль модов (см. `docs/ROADMAP.md`). Какие моды делать и в каком порядке, пока обдумывается.
+Текущий этап: ядро закончено, единый стиль модов в работе: решение и каркас окна есть (см. `docs/UI_STYLE.md`, `docs/ROADMAP.md`). Какие моды делать и в каком порядке, пока обдумывается.
 
 ## Устройство репозитория
 
@@ -20,18 +20,20 @@
 - `mkga/core/safe_io.py`: безопасная запись с откатом (`ctx.session(...)`, `track`, `delete` в корзину, `dry_run`), журнал `python -m mkga history`, откат `undo`. Моды НЕ пишут файлы пользователя напрямую: это проверяет `mkga/guard.py` (`python -m mkga check mods`, в CI). Документы КОМПАСа сохраняются через `Kompas.save_as(session, doc, path)`.
 - `mkga/core/constants.py`: константы КОМПАСа, нужные модам (182, СГЕНЕРИРОВАНО `python tools/gen_constants.py`, вручную не править; новые добавлять в группы генератора). Использование: `from mkga.core import constants as C; C.ksDocumentPart`. `mkga/core/typelib.py`: чтение констант из библиотеки типов (только для разработки). `connect()` работает без `gencache` (позднее связывание). `Kompas.is_study/is_home/is_spds`: редакция.
 - `mkga/core/versions.py`: правило версий (проверено / предупреждение / отказ) и таблица возможностей `FEATURES` (пока пуста, только подтверждённые факты). `mkga/core/fake.py`: фейковый КОМПАС (`--fake-kompas`). `mkga/core/settings.py`: `ctx.settings`.
-- `mkga/gui.py`: окно хаба на tkinter. Окно открывается (проверено на Windows, tk 8.6), функции кнопок не проверены.
+- `mkga/ui/`: единый стиль (`docs/UI_STYLE.md`): `theme.py` (своя тема ttk, палитры LIGHT/DARK, DPI, `theme.px`, `theme.card`), `raster.py` (рисование скруглений на чистом Python), `window.py` (`ModWindow`: каркас окна мода с предпросмотром, журналом, действиями в рабочем потоке), `demo.py` (`python -m mkga ui-demo [--dark]`). Окна мод делает на `ModWindow`, размеры только через `theme.px`, внутри карточек стили `Card.*`. Особенности ttk (плитки 9-slice, фон виджета, потоки) описаны в UI_STYLE.md: читать перед правкой темы.
+- `mkga/gui.py`: окно хаба на tkinter (DPI и стиль включены, внешний вид не переработан). Окно открывается (проверено на Windows, tk 8.6), функции кнопок не проверены.
 - `mods/_template`, `mods/fasteners`: шаблон и заготовка мода.
 - `docs/ARCHITECTURE.md`: формат манифеста, реестра, модель безопасности.
 
 ## Команды
 
 ```
-python -m unittest discover -s tests -t .      # 99 тестов, КОМПАС не нужен
+python -m unittest discover -s tests -t .      # 118 тестов, КОМПАС не нужен (тесты окон пропускаются без дисплея)
 python tools/validate_registry.py
 python -m mkga validate mods/_template
 python -m mkga check mods                      # страж: нет записи файлов в обход ctx.session
 python -m mkga run-dev mods/_template --fake-kompas   # без КОМПАСа
+python -m mkga ui-demo --fake-kompas [--dark]  # демо окна мода (пишет только во временную папку)
 python -m mkga run-dev mods/_template          # мод из папки; нужен Windows, ЗАПУЩЕННЫЙ КОМПАС, pywin32
 ```
 
