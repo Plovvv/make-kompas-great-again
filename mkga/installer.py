@@ -45,8 +45,17 @@ def download(url: str, dest: str | Path) -> None:
         shutil.copyfileobj(resp, out)
 
 
+MAX_UNCOMPRESSED = 200 * 1024 * 1024   # предел суммарного размера распакованных файлов (защита от zip-бомбы)
+MAX_MEMBERS = 5000
+
+
 def _safe_extract(zf: zipfile.ZipFile, target: Path) -> None:
-    """Распаковка с защитой от выхода за пределы папки (zip-slip) и от ссылок."""
+    """Распаковка с защитой от выхода за пределы папки (zip-slip), ссылок и zip-бомб."""
+    infos = zf.infolist()
+    if len(infos) > MAX_MEMBERS:
+        raise InstallError(f"в архиве слишком много файлов: {len(infos)}")
+    if sum(i.file_size for i in infos) > MAX_UNCOMPRESSED:
+        raise InstallError("архив слишком большой после распаковки")
     root = target.resolve()
     for info in zf.infolist():
         name = info.filename.replace("\\", "/")

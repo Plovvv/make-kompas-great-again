@@ -30,4 +30,11 @@
 
 ## Добавление мода в реестр
 
-Pull request, который добавляет или обновляет запись в `registry/registry.json`: `id`, `repo`, `tag`, `sha256` архива релиза. Хеш: `python -c "from mkga.installer import sha256_file; print(sha256_file('архив.zip'))"`.
+Подробно: [docs/WRITING_MODS.md](docs/WRITING_MODS.md), раздел «Выпуск». Коротко:
+
+1. `python -m mkga pack <папка мода> --repo <владелец>/<репозиторий> --add-to-registry registry/registry.json`:
+   собирает воспроизводимый архив `dist/<id>-v<версия>.zip`, печатает хеш и обновляет запись в реестре.
+2. Приложите этот архив к релизу GitHub с тегом `v<версия>` ПОД ТЕМ ЖЕ ИМЕНЕМ.
+3. `python -m mkga verify-registry --only <id>`: скачает релиз и сверит хеш, манифест, версию и страж правил.
+4. Откройте pull request с изменением `registry/registry.json`. CI повторит проверку; новый мод перед слиянием
+   читает человек (автоматическая проверка не ловит злой умысел).

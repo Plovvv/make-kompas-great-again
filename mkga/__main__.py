@@ -66,6 +66,47 @@ def _run_guarded(call) -> int:
     return 0
 
 
+def _pack(args) -> int:
+    import json
+
+    from .release import ReleaseError, add_to_registry, build_release, registry_entry
+    if args.add_to_registry and not args.repo:
+        print("Ошибка: для --add-to-registry нужен --repo owner/name", file=sys.stderr)
+        return 1
+    try:
+        info = build_release(args.path, args.out, args.tag)
+        entry = registry_entry(info, args.repo) if args.repo else None
+        action = add_to_registry(args.add_to_registry, entry) if args.add_to_registry else None
+    except ReleaseError as e:
+        print(f"Ошибка: {e}", file=sys.stderr)
+        return 1
+    print(f"Собрано: {info.path}  ({info.size} байт, файлов {info.files})")
+    print(f"sha256: {info.sha256}")
+    print(f"Загрузите этот файл в релиз с тегом {info.tag!r} под именем {info.path.name!r}.")
+    if entry:
+        print("Запись для registry/registry.json:")
+        print(json.dumps(entry, ensure_ascii=False, indent=2))
+        if action:
+            print(f"Реестр {args.add_to_registry}: {action}.")
+    return 0
+
+
+def _verify_registry(args) -> int:
+    from .verify import verify_registry
+    reports = verify_registry(registry_source(args.registry), only=set(args.only) if args.only else None)
+    bad = 0
+    for r in reports:
+        status = "OK" if r.ok else "ОШИБКА"
+        print(f"{status:7} {r.entry.id} {r.entry.tag}")
+        for line in r.problems:
+            print(f"        - {line}")
+        for line in r.warnings:
+            print(f"        ! {line}")
+        bad += 0 if r.ok else 1
+    print(f"Записей проверено: {len(reports)}, с ошибками: {bad}")
+    return 1 if bad else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="mkga", description="MAKE KOMPAS GREAT AGAIN: хаб модов для КОМПАС-3D (неофициальный)")
     p.add_argument("--version", action="version", version=f"mkga {__version__}")
@@ -90,6 +131,15 @@ def build_parser() -> argparse.ArgumentParser:
     _add_run_options(s)
     s = sub.add_parser("validate", help="проверить манифест мода в папке")
     s.add_argument("path", type=Path)
+    s = sub.add_parser("pack", help="собрать релиз мода: воспроизводимый zip, хеш и запись для реестра")
+    s.add_argument("path", type=Path, help="папка мода (с mkga-mod.json)")
+    s.add_argument("--out", type=Path, default=Path("dist"), help="куда положить архив (по умолчанию dist)")
+    s.add_argument("--tag", help="тег релиза (по умолчанию v<версия из манифеста>)")
+    s.add_argument("--repo", help="репозиторий релиза owner/name: тогда печатается запись для реестра")
+    s.add_argument("--add-to-registry", type=Path, metavar="registry.json",
+                   help="добавить или обновить запись в этом файле реестра (нужен --repo)")
+    s = sub.add_parser("verify-registry", help="скачать релизы из реестра и проверить хеш, манифест и страж правил")
+    s.add_argument("--only", nargs="*", default=None, metavar="ID", help="проверить только эти id")
     s = sub.add_parser("check", help="проверить код мода: нет ли записи файлов в обход ctx.session")
     s.add_argument("path", type=Path)
     sub.add_parser("history", help="журнал изменений файлов, сделанных модами (для отката)")
@@ -142,6 +192,10 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "validate":
             m = load_manifest(args.path)
             print(f"OK: {m.id} {m.version} ({m.kind})")
+        elif args.cmd == "pack":
+            return _pack(args)
+        elif args.cmd == "verify-registry":
+            return _verify_registry(args)
         elif args.cmd == "check":
             findings = check_path(args.path)
             for f in findings:

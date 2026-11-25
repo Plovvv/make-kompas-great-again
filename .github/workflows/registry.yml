@@ -1,0 +1,31 @@
+name: Registry
+
+# Проверка записей каталога модов: срабатывает, когда меняется registry/.
+# Для каждой записи скачивается архив релиза и проверяются хеш, манифест, версия и страж правил.
+# Проверка НЕ выполняет код мода, но и не заменяет чтение кода человеком перед слиянием.
+
+on:
+  pull_request:
+    paths:
+      - "registry/**"
+  push:
+    branches: [main]
+    paths:
+      - "registry/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Registry format
+        run: python tools/validate_registry.py
+      - name: Verify release archives
+        run: python -m mkga --registry registry/registry.json verify-registry

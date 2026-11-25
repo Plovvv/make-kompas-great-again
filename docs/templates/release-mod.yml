@@ -1,0 +1,41 @@
+# Шаблон выпуска мода для репозитория АВТОРА МОДА (положите как .github/workflows/release.yml).
+#
+# При публикации тега вида v0.2.0 процесс собирает воспроизводимый архив мода, проверяет его теми же
+# проверками, что и реестр, и прикладывает к релизу GitHub под именем <id>-<тег>.zip: именно по такому
+# имени хаб строит ссылку. Хеш печатается в сводке запуска: он нужен для записи в реестр.
+#
+# Мод лежит в корне репозитория (там mkga-mod.json). Если мод в подпапке, замените `.` на путь к ней.
+# ВНИМАНИЕ: шаблон не прогонялся на GitHub (проверена только команда `mkga pack` локально).
+
+name: Release mod
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write   # создать релиз и приложить файл
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install MKGA
+        run: pip install "git+https://github.com/Plovvv/make-kompas-great-again.git"
+      - name: Build and check the release
+        run: mkga pack . --tag "${{ github.ref_name }}" --repo "${{ github.repository }}" --out dist | tee pack.log
+      - name: Show the registry entry
+        run: |
+          echo '### Запись для registry/registry.json' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat pack.log >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+      - name: Attach to the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip

@@ -19,6 +19,7 @@
 - `mkga/core/kompas.py`: подключение к запущенному КОМПАСу через COM (API5 + API7), `Kompas.version`. Проверено на v24 (подключение, версия).
 - `mkga/core/safe_io.py`: безопасная запись с откатом (`ctx.session(...)`, `track`, `delete` в корзину, `dry_run`), журнал `python -m mkga history`, откат `undo`. Моды НЕ пишут файлы пользователя напрямую: это проверяет `mkga/guard.py` (`python -m mkga check mods`, в CI). Документы КОМПАСа сохраняются через `Kompas.save_as(session, doc, path)`.
 - `mkga/core/constants.py`: константы КОМПАСа, нужные модам (182, СГЕНЕРИРОВАНО `python tools/gen_constants.py`, вручную не править; новые добавлять в группы генератора). Использование: `from mkga.core import constants as C; C.ksDocumentPart`. `mkga/core/typelib.py`: чтение констант из библиотеки типов (только для разработки). `connect()` работает без `gencache`: позднее связывание принудительное (`force_late_binding`, не зависит от кэша gen_py на машине); выходные параметры API5: `out_ints`; `Kompas.new_document/close_document` (закрыть без сохранения можно только созданный нами документ). `Kompas.is_study/is_home/is_spds`: редакция.
+- `mkga/release.py`, `mkga/verify.py`: выпуск и проверка модов (`mkga pack`, `mkga verify-registry`), см. `docs/WRITING_MODS.md`. Релиз воспроизводим; тег `v<версия манифеста>`; архив называется `<id>-<тег>.zip`.
 - `mkga/core/model3d.py`: построение 3D-деталей (эскиз, выдавливание, вырез, вращение, свойства, `verify_volume`), только проверенное на живом КОМПАСе; подробно `docs/MODEL3D.md`. Справочник по API: `python tools/inspect_api.py find|show`. Новая операция без живого теста с расчётом объёма в слой не попадает.
 - `mkga/core/versions.py`: правило версий (проверено / предупреждение / отказ) и таблица возможностей `FEATURES` (пока пуста, только подтверждённые факты). `mkga/core/fake.py`: фейковый КОМПАС (`--fake-kompas`). `mkga/core/settings.py`: `ctx.settings`.
 - `mkga/ui/`: единый стиль (`docs/UI_STYLE.md`): `theme.py` (своя тема ttk, палитры LIGHT/DARK, DPI, `theme.px`, `theme.card`), `raster.py` (рисование скруглений на чистом Python), `window.py` (`ModWindow`: каркас окна мода с предпросмотром, журналом, действиями в рабочем потоке), `demo.py` (`python -m mkga ui-demo [--dark]`). Окна мод делает на `ModWindow`, размеры только через `theme.px`, внутри карточек стили `Card.*`. Особенности ttk (плитки 9-slice, фон виджета, потоки) описаны в UI_STYLE.md: читать перед правкой темы.
@@ -33,6 +34,7 @@
 python -m unittest discover -s tests -t .      # 118 тестов, КОМПАС не нужен (тесты окон пропускаются без дисплея)
 python tools/validate_registry.py
 python -m mkga validate mods/_template
+python -m mkga pack mods/_template --repo owner/name   # собрать релиз мода, хеш и запись для реестра
 python -m mkga check mods                      # страж: нет записи файлов в обход ctx.session
 python -m mkga run-dev mods/_template --fake-kompas   # без КОМПАСа
 MKGA_LIVE_KOMPAS=1 python -m unittest tests.test_live_kompas tests.test_live_model3d -v   # живая проверка, нужен запущенный КОМПАС
