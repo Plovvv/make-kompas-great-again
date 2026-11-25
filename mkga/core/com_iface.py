@@ -97,11 +97,19 @@ def put(obj, iface: str, member: str, *args):
     return _invoke(obj, iface, "put", member, args)
 
 
+class _PlainOut:
+    """Выходной параметр без COM (для фейкового КОМПАС на машине без pywin32): значение читается через `.value`."""
+
+    value = 0.0
+
+
 def out_doubles(count: int) -> list:
     """Выходные параметры типа double для метода с [out] (читаются через `.value`)."""
-    import pythoncom
-    from win32com.client import VARIANT
-
+    try:
+        import pythoncom
+        from win32com.client import VARIANT
+    except ImportError:                       # нет pywin32: настоящего КОМПАСа тоже нет, значения заполняет фейк
+        return [_PlainOut() for _ in range(count)]
     return [VARIANT(pythoncom.VT_R8 | pythoncom.VT_BYREF, 0.0) for _ in range(count)]
 
 

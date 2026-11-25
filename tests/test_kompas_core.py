@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from mkga.core.fake import FakeDocument, make_fake_kompas
 from mkga.core.kompas import Kompas, KompasNotAvailable, connect, force_late_binding, out_ints
 from mkga.runner import ModContext, run_mod_dir
 
@@ -105,7 +106,8 @@ class RunDirTests(unittest.TestCase):
     def test_run_mod_dir_uses_given_context(self):
         with tempfile.TemporaryDirectory() as tmp:
             logs = []
-            ctx = ModContext(mod_dir=ROOT / "mods" / "_template", data_dir=Path(tmp) / "d", log=logs.append)
+            ctx = ModContext(mod_dir=ROOT / "mods" / "_template", data_dir=Path(tmp) / "d", log=logs.append,
+                             connect=lambda: make_fake_kompas(documents=[FakeDocument("Фейковый документ.m3d")]))
             run_mod_dir(ROOT / "mods" / "_template", ctx)
             self.assertTrue(logs)
             self.assertTrue((Path(tmp) / "d").is_dir())
