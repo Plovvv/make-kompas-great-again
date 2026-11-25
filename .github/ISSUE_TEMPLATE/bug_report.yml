@@ -1,0 +1,75 @@
+name: Ошибка
+description: Что-то работает неправильно, падает или может повредить файлы
+title: "[Ошибка] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо, что сообщаете. **Если ошибка могла повредить ваши файлы или документы КОМПАС, укажите это в первую очередь:**
+        это самый важный класс ошибок проекта (принцип «Не убий»). Файлы пользователя после операции мода можно вернуть
+        в хабе: «История изменений» → «Отменить выбранное».
+  - type: textarea
+    id: what
+    attributes:
+      label: Что произошло
+      description: Что вы делали и что получилось. Если мод что-то записал или удалил, что именно.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Что ожидалось
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Как повторить
+      placeholder: "1. Открыть ...\n2. Нажать ..."
+    validations:
+      required: true
+  - type: dropdown
+    id: damage
+    attributes:
+      label: Пострадали ли файлы или документы
+      options:
+        - Нет
+        - Да, но откат из хаба помог
+        - Да, и откат не помог или недоступен
+        - Не знаю
+    validations:
+      required: true
+  - type: input
+    id: mkga
+    attributes:
+      label: Версия MKGA
+      description: Видна в хабе внизу слева, либо `mkga --version`.
+    validations:
+      required: true
+  - type: dropdown
+    id: how
+    attributes:
+      label: Как установлен MKGA
+      options:
+        - MKGA.exe (собранная версия)
+        - Из исходников (Python)
+    validations:
+      required: true
+  - type: input
+    id: kompas
+    attributes:
+      label: Версия и редакция КОМПАС-3D
+      description: Например "v24.0.3.0, полная". Видна в плашке статуса в хабе после "Проверить".
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Версия Windows
+  - type: textarea
+    id: log
+    attributes:
+      label: Журнал и ошибки
+      description: Текст из журнала хаба или окна мода. Не вставляйте содержимое своих чертежей и личные данные.
+      render: text

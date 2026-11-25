@@ -1,0 +1,45 @@
+name: Задача для разработчика или ИИ-агента
+description: Чётко описанная работа, которую можно взять
+title: "[Задача] "
+labels: ["task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Перед работой прочитайте `CLAUDE.md` (карта проекта) и `docs/PRINCIPLES.md`. Хорошая задача содержит контекст,
+        ожидаемый результат и способ проверки без КОМПАС.
+  - type: textarea
+    id: context
+    attributes:
+      label: Контекст
+      description: Зачем это нужно и что уже есть (ссылки на файлы, `docs/ROADMAP.md`).
+    validations:
+      required: true
+  - type: textarea
+    id: todo
+    attributes:
+      label: Что сделать
+    validations:
+      required: true
+  - type: textarea
+    id: check
+    attributes:
+      label: Как проверить без КОМПАС
+      description: Тесты на фейковом КОМПАС (`mkga.core.fake`), команды, ожидаемый вывод.
+    validations:
+      required: true
+  - type: dropdown
+    id: live
+    attributes:
+      label: Нужна ли проверка на настоящем КОМПАС
+      options:
+        - Нет
+        - Да, нужен живой тест с расчётом (объём, масса) или сверкой с КОМПАС
+        - Не знаю
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Критерии готовности
+      placeholder: "- [ ] тесты проходят\n- [ ] python -m mkga check mods без замечаний\n- [ ] документация обновлена"

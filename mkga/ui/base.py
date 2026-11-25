@@ -33,6 +33,7 @@ class WindowBase:
         self.theme = apply_theme(self.root, palette)
         t = self.theme
         self.root.title(title)
+        self._set_window_icon()
         # Размер задаётся «как при 96 DPI», но не больше 90% ширины и 82% высоты экрана: внизу остаётся место
         # под панель задач и рамку окна, иначе нижняя полоса уходит за экран.
         width = min(t.px(size[0]), int(self.root.winfo_screenwidth() * 0.9))
@@ -61,6 +62,16 @@ class WindowBase:
 
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(40, self._pump)
+
+    def _set_window_icon(self) -> None:
+        """Значок окна и панели задач (рисуется растеризатором, без файлов)."""
+        try:
+            from . import icon
+            photo = tk.PhotoImage(master=self.root, data=__import__("base64").b64encode(icon.png_bytes(64)).decode("ascii"))
+            self.root.iconphoto(True, photo)
+            self.theme.images.append(photo)  # без ссылки Tk удалил бы картинку
+        except tk.TclError:  # значок необязателен: нет его, нет и ошибки
+            pass
 
     # --- строительные блоки интерфейса ---------------------------------------------------------
     def label(self, text: str, icon: str | None = None) -> str:

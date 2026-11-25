@@ -27,6 +27,7 @@ from ..core.settings import Settings
 from ..core.versions import OK, REFUSE, check_version
 from ..hub_model import (
     AVAILABLE, INSTALLED, LOCAL, UPDATE, HistoryRow, ModRow, build_rows, filter_rows, history_rows,
+    missing_requirements,
 )
 from ..installer import InstallError, install_from_registry, install_zip, list_installed, uninstall
 from ..launcher import start_mod
@@ -393,10 +394,18 @@ class HubWindow(WindowBase):
         if row.manifest is None:
             return "Совместимость с вашим КОМПАСом станет известна после установки."
         if self.kompas_version is None:
-            return "Нажмите «Проверить» слева, чтобы узнать, подходит ли мод вашему КОМПАСу."
+            return "Нажмите «Проверить» слева, чтобы узнать, подходит ли мод вашему КОМПАСу." + self._requires_note(row)
         verdict = check_version(self.kompas_version, row.manifest.kompas_versions)
         prefix = {OK: "✓ ", REFUSE: "✗ "}.get(verdict.level, "! ")
-        return prefix + verdict.message
+        return prefix + verdict.message + self._requires_note(row)
+
+    @staticmethod
+    def _requires_note(row: ModRow) -> str:
+        missing = missing_requirements(row.manifest) if row.manifest else []
+        if not missing:
+            return ""
+        return ("\n✗ Мод требует пакеты, которых нет в собранной версии: " + ", ".join(missing)
+                + ". Запуск из исходников возможен, если поставить их самому.")
 
     def on_kompas(self, version: tuple | None) -> None:
         self.kompas_version = version
@@ -497,6 +506,11 @@ class HubWindow(WindowBase):
         if row is None or not row.is_installed or self._busy:
             return
         mod_id = row.id
+        missing = missing_requirements(row.manifest)
+        if missing:
+            self.log(f"Мод «{row.name}» не запущен: ему нужны пакеты, которых нет в собранной версии "
+                     f"({', '.join(missing)}).", tag="error")
+            return
         self.log(f"Запускаю «{row.name}» отдельным процессом…", tag="muted")
         try:
             self._launcher(self.mods_dir, mod_id,

@@ -1,0 +1,63 @@
+name: Отчёт о проверке на КОМПАС
+description: Вы запустили живые проверки на своей версии КОМПАС, расскажите результат
+title: "[Проверка] КОМПАС "
+labels: ["verification"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Такие отчёты очень нужны: проект проверялся только на КОМПАС-3D v24 (полная версия). Отчёт заполняет матрицу
+        совместимости (`docs/COMPATIBILITY.md`). Как запустить проверки: `docs/VERIFICATION.md`.
+        Проверки создают **собственный пустой документ** и пишут только во временную папку; ваши документы не трогаются.
+  - type: input
+    id: kompas
+    attributes:
+      label: Версия КОМПАС-3D
+      description: Например "v25.0.1.0". Из хаба, плашка статуса, после "Проверить".
+    validations:
+      required: true
+  - type: dropdown
+    id: edition
+    attributes:
+      label: Редакция
+      options:
+        - Полная (профессиональная)
+        - Учебная
+        - Домашняя
+        - СПДС
+        - Другая
+    validations:
+      required: true
+  - type: input
+    id: mkga
+    attributes:
+      label: Версия MKGA и способ запуска
+      placeholder: "0.1.0, из исходников (Python 3.12)"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Версия Windows
+  - type: checkboxes
+    id: passed
+    attributes:
+      label: Что прошло (отметьте пройденное)
+      options:
+        - label: "tests.test_live_kompas: подключение, версия API7 и API5, save_as с откатом"
+        - label: "tests.test_live_model3d: построение тел, сверка объёма"
+        - label: "Хаб показывает версию и редакцию КОМПАС, мод запускается из хаба"
+        - label: "Обычные тесты: python -m unittest discover -s tests -t ."
+  - type: textarea
+    id: output
+    attributes:
+      label: Вывод тестов
+      description: Целиком, особенно если что-то не прошло.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Замечания
+      description: Что отличалось от версии v24 (имена методов, поведение, значения констант).

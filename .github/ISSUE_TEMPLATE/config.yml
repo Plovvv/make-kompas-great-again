@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Как написать и выпустить мод
+    url: https://github.com/Plovvv/make-kompas-great-again/blob/main/docs/WRITING_MODS.md
+    about: Руководство автора мода. Прочитайте перед тем, как предлагать мод или задавать вопрос.
+  - name: Принципы проекта
+    url: https://github.com/Plovvv/make-kompas-great-again/blob/main/docs/PRINCIPLES.md
+    about: Правила, которым должен соответствовать любой код (безопасность файлов, стабильность, открытость).

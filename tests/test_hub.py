@@ -187,6 +187,24 @@ class HubTests(unittest.TestCase):
         self.assertIn("[converter] привет из мода", self.log())
         self.assertIn("Хаб и другие моды не затронуты", self.log())
 
+    def test_mod_needing_unbundled_packages_is_not_run_in_the_frozen_build(self):
+        from mkga.manifest import parse_manifest
+        from tests.helpers import good_manifest
+        data = good_manifest(id="needs-numpy", requires=["numpy"], kompas_versions=[24])
+        d = self.mods / "needs-numpy"
+        d.mkdir(parents=True)
+        (d / "mkga-mod.json").write_text(json.dumps(data), encoding="utf-8")
+        (d / "main.py").write_text("def run(ctx):\n    pass\n", encoding="utf-8")
+        win = self._hub()
+        self._select("needs-numpy")
+        self.assertNotIn("numpy", win.d_compat.cget("text"))             # из исходников пакеты ставит пользователь
+        with mock.patch.object(__import__("sys"), "frozen", True, create=True):
+            win._show_details()
+            self.assertIn("numpy", win.d_compat.cget("text"))
+            win._run_selected()
+        self.assertEqual(self.launched, [])                              # процесс не запускался
+        settle(win, lambda: "не запущен: ему нужны пакеты" in self.log())
+
     def test_install_from_file_warns_first(self):
         win = self._hub()
         win._zip_installer = mock.Mock(return_value=self._write_mod("from-zip", "0.0.1"))

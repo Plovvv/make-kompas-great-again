@@ -1,12 +1,14 @@
 import json
+import sys
 import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from mkga.core.safe_io import BackupStore
 from mkga.hub_model import (
-    AVAILABLE, INSTALLED, LOCAL, UPDATE, build_rows, filter_rows, history_rows, parse_version,
+    AVAILABLE, INSTALLED, LOCAL, UPDATE, build_rows, filter_rows, history_rows, missing_requirements, parse_version,
 )
 from mkga.launcher import mod_command, start_mod
 from mkga.manifest import parse_manifest
@@ -85,6 +87,32 @@ class HistoryTests(unittest.TestCase):
             self.assertEqual([(r.mod_id, r.status_label, r.files, r.can_undo) for r in rows],
                              [("m2", "Применено", 1, True), ("m1", "Откачено", 1, False)])
             self.assertRegex(rows[0].when, r"^\d\d\.\d\d\.\d{4} \d\d:\d\d$")
+
+
+class RequirementsTests(unittest.TestCase):
+    def test_source_install_never_reports_missing_packages(self):
+        self.assertEqual(missing_requirements(manifest(requires=["numpy"]), frozen=False), [])
+
+    def test_frozen_build_lists_only_unbundled_packages(self):
+        m = manifest(requires=["pywin32", "PyWin32>=306", "numpy>=1.26", "some_pkg[extra]==1.0", "pywin32; sys_platform == 'win32'"])
+        self.assertEqual(missing_requirements(m, frozen=True), ["numpy>=1.26", "some_pkg[extra]==1.0"])
+
+    def test_default_follows_sys_frozen(self):
+        m = manifest(requires=["numpy"])
+        with mock.patch.object(sys, "frozen", True, create=True):
+            self.assertEqual(missing_requirements(m), ["numpy"])
+        self.assertEqual(missing_requirements(m), [])
+
+
+class FrozenLaunchTests(unittest.TestCase):
+    def test_frozen_command_runs_the_exe_itself_not_python_dash_m(self):
+        with mock.patch.object(sys, "frozen", True, create=True), mock.patch.object(sys, "executable", r"C:\MKGA\MKGA.exe"):
+            cmd = mod_command(r"C:\m", "demo-mod")
+        self.assertEqual(cmd, [r"C:\MKGA\MKGA.exe", "--mods-dir", r"C:\m", "run", "demo-mod"])
+
+    def test_source_command_uses_python_dash_m_mkga(self):
+        cmd = mod_command(r"C:\m", "demo-mod")
+        self.assertEqual(cmd[1:3], ["-m", "mkga"])
 
 
 class LauncherTests(unittest.TestCase):

@@ -1,0 +1,44 @@
+# Метки репозитория (для ручного создания: Settings -> Labels, либо `gh label create`).
+# Формат: имя, цвет, описание.
+- name: bug
+  color: D73A4A
+  description: Что-то работает неправильно
+- name: safety
+  color: B60205
+  description: Риск для файлов пользователя или КОМПАС (принцип "Не убий"), разбирается в первую очередь
+- name: needs-triage
+  color: FBCA04
+  description: Ещё не разобрано
+- name: needs-live-test
+  color: 5319E7
+  description: Нужна проверка на настоящем КОМПАС (живой тест с расчётом)
+- name: verification
+  color: 0E8A16
+  description: Отчёт о проверке на версии или редакции КОМПАС
+- name: mod-proposal
+  color: 1D76DB
+  description: Предложение нового мода
+- name: task
+  color: 0075CA
+  description: Чётко описанная работа
+- name: registry
+  color: C5DEF5
+  description: Запись каталога модов (registry/registry.json)
+- name: documentation
+  color: 0075CA
+  description: Документация
+- name: ui
+  color: BFD4F2
+  description: Интерфейс (тема, хаб, окно мода)
+- name: model3d
+  color: BFD4F2
+  description: Слой построения 3D-моделей
+- name: good first issue
+  color: 7057FF
+  description: Подходит для первого вклада
+- name: help wanted
+  color: 008672
+  description: Нужна помощь
+- name: ai-friendly
+  color: D4C5F9
+  description: Задача хорошо подходит ИИ-агенту (контекст и проверка без КОМПАС описаны)

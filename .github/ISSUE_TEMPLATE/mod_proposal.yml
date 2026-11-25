@@ -1,0 +1,48 @@
+name: Предложение мода
+description: Идея мода, который стоит добавить
+title: "[Мод] "
+labels: ["mod-proposal"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Что должен делать мод
+      description: Какую рутину он убирает и для кого. Опишите сценарий работы по шагам.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Чем лучше того, что уже есть
+      description: Чего не хватает в штатных библиотеках и инструментах КОМПАС.
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Что мод делает с документами
+      options:
+        - Создаёт новые файлы (детали, чертежи) в выбранной папке
+        - Меняет открытый документ (вставка, переименование, правка свойств)
+        - Только читает и выводит данные
+        - Пока не знаю
+    validations:
+      required: true
+  - type: textarea
+    id: data
+    attributes:
+      label: Источники данных
+      description: Стандарты (ГОСТ, ISO, DIN) и каталоги производителей, номера и редакции. Данные берутся только из первоисточников. Базы и модели АСКОН не копируются.
+  - type: input
+    id: versions
+    attributes:
+      label: Версии КОМПАС, где мод нужен
+      placeholder: "v22 – v25"
+  - type: dropdown
+    id: author
+    attributes:
+      label: Кто будет писать
+      options:
+        - Я готов(а) написать мод
+        - Могу помочь с проверкой и данными
+        - Хочу, чтобы кто-то написал
+    validations:
+      required: true

@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import re
+import sys
 import time
 from dataclasses import dataclass
 from typing import Iterable
@@ -21,6 +23,24 @@ STATE_LABEL = {
     UPDATE: "Есть обновление",
     LOCAL: "Свой (не из каталога)",
 }
+
+
+# Что есть в собранной версии (exe): стандартная библиотека и эти пакеты. Остальное из `requires` манифеста недоступно.
+BUNDLED_PACKAGES = {"pywin32"}
+
+
+def missing_requirements(manifest: Manifest, frozen: bool | None = None) -> list[str]:
+    """Пакеты из `requires` мода, которых нет в этой сборке. В исходниках (не exe) пакеты ставит сам пользователь: пусто."""
+    if frozen is None:
+        frozen = bool(getattr(sys, "frozen", False))
+    if not frozen:
+        return []
+    out = []
+    for requirement in manifest.requires:
+        name = re.split(r"[<>=!~;\[ ]", requirement.strip(), maxsplit=1)[0].lower().replace("_", "-")
+        if name and name not in BUNDLED_PACKAGES:
+            out.append(requirement)
+    return out
 
 
 def parse_version(text: str) -> tuple[int, ...] | None:
