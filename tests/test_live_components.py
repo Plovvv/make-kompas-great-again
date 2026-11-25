@@ -201,6 +201,32 @@ class LiveComponentsTests(unittest.TestCase):
                 self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 3e-2)
         self.check_saved(self.create("din-985", "M6"), object_type="Стандартное изделие", threads=1)
 
+    # --- DIN 7984, установочные винты, штифты ------------------------------------------------------------------------
+    def test_din7984_low_head(self):
+        for size, length in (("M3", 8), ("M6", 20), ("M10", 40), ("M24", 80)):
+            with self.subTest(size=size):
+                r = self.create("din-7984", size, length)
+                self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 1e-6)
+
+    def test_set_screws(self):
+        for std_id in ("din-913", "din-914", "din-916"):
+            for size, length in (("M3", 6), ("M6", 12), ("M12", 20), ("M20", 40)):
+                if size not in self.catalog.standards[std_id].sizes:
+                    continue
+                with self.subTest(standard=std_id, size=size):
+                    r = self.create(std_id, size, length)
+                    self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 1e-6)
+        self.check_saved(self.create("din-914", "M8", 16), object_type="Стандартное изделие", threads=1)
+
+    def test_dowel_pins(self):
+        for size, length in (("Ø1", 6), ("Ø3", 12), ("Ø6", 30), ("Ø12", 100)):
+            with self.subTest(size=size):
+                r = self.create("iso-2338", size, length)
+                self.assertAlmostEqual(r.volume_mm3, r.expected_mm3, delta=r.expected_mm3 * 1e-6)
+        r = self.create("iso-2338", "Ø6", 20, "m6")
+        self.assertEqual(r.path.name, "Штифт ISO 2338 - Ø6 x 20 - m6.m3d")
+        self.check_saved(r, object_type="Стандартное изделие", threads=0)
+
     def test_every_catalog_standard_builds_with_one_sample_size(self):
         """По одному типоразмеру из каждого стандарта каталога: страховка от опечаток в таблицах."""
         for std in self.catalog.standards.values():

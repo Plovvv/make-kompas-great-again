@@ -392,9 +392,64 @@ def draw_nut_nyloc(dims: Mapping[str, float], length: float | None = None) -> Dr
     return _finish(prims, [side, top_view], (("Вид сбоку", "слева"), ("Вид сверху", "справа")))
 
 
+def draw_set_screw(dims: Mapping[str, float], length: float | None = None) -> Drawing:
+    """Установочный винт: вид сбоку (углубление невидимой линией) и вид сверху с шестигранником."""
+    d, p, dp, s, t = (dims[x] for x in ("d", "P", "dp", "s", "t"))
+    length = float(length)
+    c = (d - dp) / 2.0
+    big = max(d, length)
+    gap = 0.18 * big
+    text = 0.03 * big + 0.3
+    prims: list = []
+    end = -length
+    prims += _poly([(-d / 2, 0.0), (d / 2, 0.0), (d / 2, end + c), (dp / 2, end), (-dp / 2, end), (-d / 2, end + c)])
+    prims += [Line(-s / 2, 0.0, -s / 2, -t, HIDDEN), Line(s / 2, 0.0, s / 2, -t, HIDDEN), Line(-s / 2, -t, s / 2, -t, HIDDEN)]
+    minor = d - 1.082532 * p
+    prims += [Line(-minor / 2, 0.0, -minor / 2, end + c, THIN), Line(minor / 2, 0.0, minor / 2, end + c, THIN)]
+    _center_v(prims, 0, gap * 0.6, end - gap * 0.6)
+    dim_h(prims, -d / 2, d / 2, 0.0, gap * 0.8, f"d {num(d)}", text)
+    dim_v(prims, end, 0.0, d / 2, d / 2 + gap, f"l {num(length)}", text)
+    dim_v(prims, -t, 0.0, -d / 2, -d / 2 - gap, f"t {num(t)}", text)
+    dim_h(prims, -dp / 2, dp / 2, end, end - gap * 0.8, f"dp {num(dp)}", text)
+    side = (-d / 2 - gap * 2.4, end - gap * 1.8, d / 2 + gap * 3.4, gap * 1.6)
+    cx = side[2] + gap + d / 2
+    cy = -length / 2 if length < 3 * d else -d
+    prims += [Circle(cx, cy, d / 2), Circle(cx, cy, minor / 2, THIN)] + _hexagon(cx, cy, s)
+    _center_h(prims, cx - d / 2 - gap * 0.6, cx + d / 2 + gap * 0.6, cy)
+    _center_v(prims, cx, cy - d / 2 - gap * 0.6, cy + d / 2 + gap * 0.6)
+    dim_v(prims, cy - s / 2, cy + s / 2, cx + s / math.sqrt(3.0), cx + d / 2 + gap, f"s {num(s)}", text)
+    top = (cx - d / 2 - gap, cy - d / 2 - gap, cx + d / 2 + gap * 3.2, cy + d / 2 + gap)
+    return _finish(prims, [side, top], (("Вид сбоку", "слева"), ("Вид сверху", "справа")))
+
+
+def draw_pin(dims: Mapping[str, float], length: float | None = None) -> Drawing:
+    """Цилиндрический штифт: вид сбоку с фасками и вид с торца."""
+    d, c = dims["d"], dims["c"]
+    length = float(length)
+    big = max(d, length)
+    gap = 0.14 * big
+    text = 0.025 * big + 0.3
+    prims: list = []
+    prims += _poly([(-d / 2 + c, 0.0), (d / 2 - c, 0.0), (d / 2, -c), (d / 2, -length + c), (d / 2 - c, -length),
+                    (-d / 2 + c, -length), (-d / 2, -length + c), (-d / 2, -c)])
+    prims += [Line(-d / 2, -c, d / 2, -c, THIN), Line(-d / 2, -length + c, d / 2, -length + c, THIN)]
+    _center_v(prims, 0, gap * 0.6, -length - gap * 0.6)
+    dim_h(prims, -d / 2, d / 2, 0.0, gap, f"d {num(d)}", text)
+    dim_v(prims, -length, 0.0, d / 2, d / 2 + gap, f"l {num(length)}", text)
+    dim_v(prims, -c, 0.0, -d / 2, -d / 2 - gap, f"c {num(c)}", text)
+    side = (-d / 2 - gap * 2.6, -length - gap * 1.8, d / 2 + gap * 3.4, gap * 1.8)
+    cx = side[2] + gap + d / 2
+    cy = -min(length, 2 * d) / 2
+    prims += [Circle(cx, cy, d / 2), Circle(cx, cy, d / 2 - c, THIN)]
+    _center_h(prims, cx - d / 2 - gap * 0.6, cx + d / 2 + gap * 0.6, cy)
+    _center_v(prims, cx, cy - d / 2 - gap * 0.6, cy + d / 2 + gap * 0.6)
+    end = (cx - d / 2 - gap, cy - d / 2 - gap, cx + d / 2 + gap, cy + d / 2 + gap)
+    return _finish(prims, [side, end], (("Вид сбоку", "слева"), ("Вид с торца", "справа")))
+
+
 DRAWERS = {"cap_screw": draw_cap_screw, "csk_screw": draw_csk_screw, "button_screw": draw_button_screw, "flange_button_screw": draw_flange_screw,
            "washer_flat": draw_washer, "washer_spring": draw_spring_washer, "nut_hex": draw_nut_hex,
-           "hex_bolt": draw_hex_bolt, "nut_nyloc": draw_nut_nyloc}
+           "hex_bolt": draw_hex_bolt, "nut_nyloc": draw_nut_nyloc, "set_screw": draw_set_screw, "pin_dowel": draw_pin}
 
 # расшифровка букв размеров для подсказки в окне (буква, что это, ключ в таблице)
 LEGENDS: dict[str, list[tuple[str, str, str]]] = {
@@ -417,6 +472,9 @@ LEGENDS: dict[str, list[tuple[str, str, str]]] = {
     "hex_bolt": [("d", "диаметр резьбы", "d"), ("P", "шаг резьбы", "P"), ("s", "размер под ключ", "s"),
                  ("k", "высота головки", "k"), ("dw", "начало фаски (диаметр)", "dw"), ("b", "длина резьбы от конца", "b"),
                  ("l", "длина под головкой", "")],
+    "set_screw": [("d", "диаметр резьбы", "d"), ("P", "шаг резьбы", "P"), ("dp", "диаметр конца (торца или вершины)", "dp"),
+                  ("s", "размер под ключ", "s"), ("t", "глубина под ключ", "t"), ("l", "длина", "")],
+    "pin_dowel": [("d", "диаметр", "d"), ("c", "фаска на торцах", "c"), ("l", "длина", "")],
     "nut_nyloc": [("d", "диаметр резьбы", "d"), ("P", "шаг резьбы", "P"), ("s", "размер под ключ", "s"),
                   ("m", "высота шестигранника", "m"), ("h", "полная высота", "h"), ("dw", "диаметр буртика и фаски", "dw")],
     "nut_hex": [("d", "диаметр резьбы", "d"), ("P", "шаг резьбы", "P"), ("s", "размер под ключ", "s"),

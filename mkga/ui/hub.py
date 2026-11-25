@@ -142,11 +142,13 @@ class HubWindow(WindowBase):
         pill.configure(anchor="center", wraplength=t.px(220))
         pill.grid(row=11, column=0, sticky="ew", pady=(0, t.pad_small))
         check.grid(row=12, column=0, sticky="ew")
+        ttk.Button(side, text="Пункты в меню КОМПАС…", style="Ghost.TButton", command=self._kompas_menu).grid(
+            row=13, column=0, sticky="ew", pady=(t.pad_small, 0))
         self._theme_btn = ttk.Button(side, text=f"Тема: {THEME_LABEL[self.theme_name]}", style="Ghost.TButton",
                                      command=self._cycle_theme)
-        self._theme_btn.grid(row=13, column=0, sticky="ew", pady=(t.pad_small, 0))
+        self._theme_btn.grid(row=14, column=0, sticky="ew", pady=(t.pad_small, 0))
         ttk.Label(side, text=f"Версия MKGA {__version__}", style="Small.Muted.TLabel").grid(
-            row=14, column=0, sticky="w", pady=(t.pad_small, 0))
+            row=15, column=0, sticky="w", pady=(t.pad_small, 0))
 
     def _build_mods_page(self, parent: tk.Misc) -> ttk.Frame:
         t, p = self.theme, self.theme.palette
@@ -573,6 +575,43 @@ class HubWindow(WindowBase):
             ctx.log(f"Откат выполнен, возвращено файлов: {len(report.restored)}", tag="ok")
 
         self.run_in_background(self._friendly(work), "Откат")
+
+    # =========================== меню КОМПАС ==========================================================
+    def _kompas_menu(self) -> None:
+        """Добавить или убрать пункты MKGA в меню КОМПАС («Приложения → Утилиты»). Работает только при закрытом КОМПАС."""
+        from .. import kompas_menu as km
+        entries: list = []
+        try:
+            state = km.status()
+            if not state:
+                self.log("Файл настроек КОМПАС не найден: пункты меню добавить нельзя.", tag="error")
+                return
+            present = sum(state.values())
+            text = ("Пункты MKGA в меню КОМПАС (Приложения → Утилиты) позволят открыть хаб и моды прямо из КОМПАС.\n"
+                    "Для этого меняется файл настроек КОМПАС: КОМПАС должен быть закрыт, изменение можно откатить "
+                    "(страница «История изменений»).\n\n"
+                    + (f"Сейчас пунктов MKGA: {present}.\n\n" if present else "")
+                    + "Да: добавить или обновить пункты.\nНет: убрать пункты MKGA.\nОтмена: ничего не менять.")
+            answer = messagebox.askyesnocancel("Пункты в меню КОМПАС", text, parent=self.root)
+            if answer is None:
+                return
+            if answer:
+                exe = km.find_exe()
+                if exe is None:
+                    self.log("Не нашёл MKGA.exe для пунктов меню (нужна собранная версия: python tools/build_exe.py).",
+                             tag="error")
+                    return
+                entries = km.installed_entries(exe, self.mods_dir)
+            reports = km.apply(entries, store=self.ctx.backups)
+        except (km.MenuError, OSError) as e:
+            self.log(f"Меню КОМПАС не изменено: {e}", tag="error")
+            return
+        for r in reports:
+            self.log(f"КОМПАС {r.version}: пунктов MKGA было {r.before}, стало {r.after}" if r.changed
+                     else f"КОМПАС {r.version}: без изменений", tag="ok" if r.changed else "muted")
+        if entries and any(r.changed for r in reports):
+            self.log("Откройте КОМПАС: пункты появятся в меню «Приложения → Утилиты».", tag="muted")
+        self.refresh_history()
 
     # =========================== тема =================================================================
     def _cycle_theme(self) -> None:

@@ -2,6 +2,7 @@
 
 import gc
 import json
+import shutil
 import tempfile
 import time
 import unittest
@@ -227,6 +228,43 @@ class HubTests(unittest.TestCase):
         with self.store.begin("fasteners", "Правка файла") as s:
             s.write_text(f, "после")
         return f
+
+    # --- меню КОМПАС -----------------------------------------------------------------------------
+    def test_kompas_menu_button_adds_and_removes_entries(self):
+        from mkga import kompas_menu as km
+        from tests.test_kompas_menu import SAMPLE, make_appdata
+        appdata = make_appdata()
+        self.addCleanup(shutil.rmtree, appdata, True)
+        exe = self.mods.parent / "MKGA.exe"
+        exe.write_bytes(b"x")
+        self._write_mod("fasteners", "0.1.0")
+        win = self._hub()
+        real_apply = km.apply
+        with mock.patch.dict("os.environ", {"APPDATA": str(appdata)}),                 mock.patch.object(km, "find_exe", return_value=exe),                 mock.patch.object(km, "is_kompas_running", return_value=False),                 mock.patch.object(km, "apply", lambda entries, **kw: real_apply(entries, running=lambda: False, **kw)):
+            with mock.patch("tkinter.messagebox.askyesnocancel", return_value=True):
+                win._kompas_menu()
+            self.assertEqual(km.status(), {"24": 1})                # пункт хаба (мод fasteners не приложение)
+            settle(win, lambda: "пунктов MKGA было 0, стало 1" in self.log())
+            with mock.patch("tkinter.messagebox.askyesnocancel", return_value=False):
+                win._kompas_menu()
+            self.assertEqual(km.status(), {"24": 0})
+            with mock.patch("tkinter.messagebox.askyesnocancel", return_value=None):
+                win._kompas_menu()
+            self.assertEqual(km.read_config(appdata / "ASCON" / "KOMPAS-3D" / "24" / "KOMPAS.kit.config"), SAMPLE)
+
+    def test_kompas_menu_refuses_while_kompas_runs(self):
+        from mkga import kompas_menu as km
+        from tests.test_kompas_menu import make_appdata
+        appdata = make_appdata()
+        self.addCleanup(shutil.rmtree, appdata, True)
+        exe = self.mods.parent / "MKGA.exe"
+        exe.write_bytes(b"x")
+        win = self._hub()
+        real_apply = km.apply
+        with mock.patch.dict("os.environ", {"APPDATA": str(appdata)}), mock.patch.object(km, "find_exe", return_value=exe),                 mock.patch.object(km, "apply", lambda entries, **kw: real_apply(entries, running=lambda: True, **kw)),                 mock.patch("tkinter.messagebox.askyesnocancel", return_value=True):
+            win._kompas_menu()
+        settle(win, lambda: "КОМПАС запущен" in self.log())
+        self.assertEqual(km.status(appdata=appdata), {"24": 0})
 
     def test_history_lists_and_undoes(self):
         f = self._make_history()

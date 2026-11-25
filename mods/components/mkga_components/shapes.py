@@ -610,6 +610,60 @@ def _nyloc_build(part, dims, length):
     part.thread(bore / 2.0)
 
 
+# --- установочный винт с шестигранным углублением (DIN 913 плоский конец, DIN 914 конус, DIN 916 чашечный) ----------------
+# Тело вращения: цилиндр d длиной l, конец с фаской 45° до диаметра dp (у плоского это торец, у конусного вершина).
+def _set_profile(dims: Mapping[str, float], length: float) -> list[Point]:
+    d, dp = dims["d"], dims["dp"]
+    c = (d - dp) / 2.0
+    return [(0.0, 0.0), (d / 2, 0.0), (d / 2, -(length - c)), (dp / 2, -length), (0.0, -length)]
+
+
+def _set_check(dims, length):
+    _need(dims, ("d", "P", "dp", "s", "t"), "установочный винт")
+    _positive(dims, ("d", "P", "dp", "s", "t"))
+    if dims["dp"] >= dims["d"]:
+        raise ShapeError("диаметр конца dp должен быть меньше диаметра резьбы d")
+    if length is None or length <= dims["t"] + (dims["d"] - dims["dp"]) / 2.0:
+        raise ShapeError("длина винта должна быть больше глубины углубления плюс длины фаски конца")
+    if dims["s"] / math.cos(math.radians(30)) >= dims["d"]:
+        raise ShapeError("шестигранное углубление не помещается в винт")
+
+
+def _set_volume(dims, length):
+    return revolved_volume(_set_profile(dims, length)) - hexagon_area(dims["s"]) * dims["t"]
+
+
+def _set_build(part, dims, length):
+    _revolve_profile(part, _set_profile(dims, length))
+    with part.sketch("XOZ") as sk:
+        sk.regular_polygon(6, across_flats=dims["s"])
+    part.cut_extrude(sk, dims["t"], direction="both")
+    part.thread(dims["d"] / 2)                                  # резьба на всю длину
+
+
+# --- штифт цилиндрический (ISO 2338, DIN 7) ------------------------------------------------------------------------------
+def _pin_profile(dims: Mapping[str, float], length: float) -> list[Point]:
+    r, c = dims["d"] / 2, dims["c"]
+    return [(0.0, 0.0), (r - c, 0.0), (r, -c), (r, -(length - c)), (r - c, -length), (0.0, -length)]
+
+
+def _pin_check(dims, length):
+    _need(dims, ("d", "c"), "штифт")
+    _positive(dims, ("d", "c"))
+    if dims["c"] >= dims["d"] / 2:
+        raise ShapeError("фаска штифта больше его радиуса")
+    if length is None or length <= 2 * dims["c"]:
+        raise ShapeError("длина штифта должна быть больше двух фасок")
+
+
+def _pin_volume(dims, length):
+    return revolved_volume(_pin_profile(dims, length))
+
+
+def _pin_build(part, dims, length):
+    _revolve_profile(part, _pin_profile(dims, length))
+
+
 SHAPES: dict[str, Shape] = {
     "cap_screw": Shape("cap_screw", "Винт с цилиндрической головкой и шестигранным углублением",
                        ("d", "P", "dk", "k", "s", "t"), True, "external",
@@ -630,6 +684,10 @@ SHAPES: dict[str, Shape] = {
                       _bolt_check, _bolt_volume, _bolt_build, volume_tol=3e-2, verify=_bolt_verify),
     "nut_nyloc": Shape("nut_nyloc", "Самоконтрящаяся гайка с нейлоновым кольцом", ("d", "P", "s", "m", "h", "dw"), False,
                        "internal", _nyloc_check, _nyloc_volume, _nyloc_build, volume_tol=3e-2, verify=_nyloc_verify),
+    "set_screw": Shape("set_screw", "Установочный винт с шестигранным углублением (конец с фаской 45°)",
+                       ("d", "P", "dp", "s", "t"), True, "external", _set_check, _set_volume, _set_build),
+    "pin_dowel": Shape("pin_dowel", "Цилиндрический штифт с фасками", ("d", "c"), True, "", _pin_check, _pin_volume,
+                       _pin_build),
     "nut_hex": Shape("nut_hex", "Шестигранная гайка", ("d", "P", "s", "m", "dw"), False, "internal",
                      _nut_check, _nut_volume, _nut_build, volume_tol=3e-2, verify=_nut_verify),
 }

@@ -66,6 +66,38 @@ def _run_guarded(call) -> int:
     return 0
 
 
+def _kompas_menu(args, mods_dir) -> int:
+    from . import kompas_menu as km
+    versions = args.kompas_version
+    try:
+        if args.action == "status":
+            st = km.status()
+            if not st:
+                print("Файл конфигурации КОМПАС не найден.")
+            for ver, n in st.items():
+                print(f"КОМПАС {ver}: пунктов MKGA в меню: {n}")
+            return 0
+        entries: list = []
+        if args.action == "add":
+            exe = km.find_exe(args.exe)
+            if exe is None:
+                print("Ошибка: укажите --exe путь к MKGA.exe (собрать: python tools/build_exe.py)", file=sys.stderr)
+                return 1
+            entries = km.installed_entries(exe, mods_dir, bool(args.mods_dir))
+        reports = km.apply(entries, versions=versions, dry_run=args.dry_run)
+    except (km.MenuError, SafeIOError) as e:
+        print(f"Ошибка: {e}", file=sys.stderr)
+        return 1
+    for r in reports:
+        verb = ("было бы изменено" if args.dry_run else "изменено") if r.changed else "без изменений"
+        print(f"КОМПАС {r.version}: {verb}, пунктов MKGA было {r.before}, стало {r.after} ({r.path})")
+        if r.session_id:
+            print(f"  откат: python -m mkga undo {r.session_id}")
+    if args.action == "add" and not args.dry_run:
+        print("Откройте КОМПАС: пункты появятся в меню «Приложения → Утилиты».")
+    return 0
+
+
 def _pack(args) -> int:
     import json
 
@@ -150,6 +182,11 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("ui-demo", help="демо окна мода (пишет только во временную папку)")
     s.add_argument("--fake-kompas", action="store_true", help="не подключаться к настоящему КОМПАСу")
     s.add_argument("--dark", action="store_true", help="тёмная тема")
+    s = sub.add_parser("kompas-menu", help="пункты MKGA в меню КОМПАС (Приложения → Утилиты): status | add | remove")
+    s.add_argument("action", choices=["status", "add", "remove"])
+    s.add_argument("--exe", help="путь к MKGA.exe (для собранной версии берётся сам, из исходников нужен)")
+    s.add_argument("--kompas-version", action="append", help="только эта версия КОМПАС (например 24); можно повторять")
+    s.add_argument("--dry-run", action="store_true", help="показать, что изменится, ничего не записывая")
     sub.add_parser("gui", help="окно хаба")
     return p
 
@@ -196,6 +233,8 @@ def main(argv: list[str] | None = None) -> int:
             return _pack(args)
         elif args.cmd == "verify-registry":
             return _verify_registry(args)
+        elif args.cmd == "kompas-menu":
+            return _kompas_menu(args, mods_dir)
         elif args.cmd == "check":
             findings = check_path(args.path)
             for f in findings:

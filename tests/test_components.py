@@ -154,7 +154,8 @@ class CatalogTests(unittest.TestCase):
         c = catalog()
         self.assertEqual(c.problems, [])
         for std_id in ("din-912", "iso-7380-1", "iso-7380-2", "din-7991", "din-125-a", "din-127-b", "din-934",
-                       "din-933", "din-931", "din-9021", "din-439", "din-985"):
+                       "din-933", "din-931", "din-9021", "din-439", "din-985", "din-7984", "din-913",
+                       "din-914", "din-916", "iso-2338"):
             self.assertIn(std_id, c.standards)
 
     def test_every_size_and_length_of_every_standard_is_buildable(self):
@@ -683,7 +684,7 @@ class ModuleEntryTests(unittest.TestCase):
                 module.run(ctx)
         (_, catalog_arg), kwargs = run_app.call_args
         self.assertIn("din-912", catalog_arg.standards)
-        self.assertEqual(kwargs["version"], "0.3.0")
+        self.assertEqual(kwargs["version"], "0.4.0")
         self.assertEqual(kwargs["user_dir"], Path(ctx.data_dir) / "standards")
 
 
