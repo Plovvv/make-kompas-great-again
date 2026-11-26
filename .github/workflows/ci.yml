@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [windows-latest]   # проект только для Windows (КОМПАС-3D работает только там)
         python: ["3.10", "3.12"]
     steps:
       - uses: actions/checkout@v4
