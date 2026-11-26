@@ -29,6 +29,8 @@ from .core.safe_io import BackupStore, SafeIOError
 MARK = "[mkga]"                         # метка в описании: так находим свои строки
 _ROW = re.compile(r"[ \t]*<Utility\b[^>]*/>[ \t]*\r?\n?")
 _UTILITY = re.compile(r"<Utility\b[^>]*/>")
+_EMPTY_GROUPS = re.compile(r"<Groups\s*/>|<Groups>\s*</Groups>")
+_ONLY_EMPTY_GROUP = re.compile(r"<Groups>\s*<Group>\s*</Group>\s*</Groups>")
 
 
 class MenuError(SafeIOError):
@@ -108,14 +110,34 @@ def apply_entries(text: str, entries: Sequence[MenuEntry]) -> str:
         eol = "\r\n" if "\r\n" in cleaned else "\n"
         insert = "".join(f"{eol}{indent}{row}" for row in new_rows)
         return cleaned[:last.end()] + insert + cleaned[last.end():]
-    raise MenuError("в файле конфигурации нет ни одной утилиты: не знаю, куда вставлять пункты (формат отличается от проверенного)")
+    eol = "\r\n" if "\r\n" in cleaned else "\n"
+    empty = _EMPTY_GROUPS.search(cleaned)
+    if empty:                          # КОМПАС v25: пользовательский файл пуст («<Groups/>»), создаём группу с нашими утилитами
+        line_start = cleaned.rfind("\n", 0, empty.start()) + 1
+        indent = cleaned[line_start:empty.start()]
+        if indent.strip():
+            indent = ""
+        rows = "".join(f"{eol}{indent}\t\t{row}" for row in new_rows)
+        block = f"<Groups>{eol}{indent}\t<Group>{rows}{eol}{indent}\t</Group>{eol}{indent}</Groups>"
+        return cleaned[:empty.start()] + block + cleaned[empty.end():]
+    close = cleaned.find("</Group>")
+    if close != -1:                    # утилит в файле нет, но группы есть: в конец первой группы, с отступом её последней строки
+        line_start = cleaned.rfind("\n", 0, close) + 1
+        indent_close = cleaned[line_start:close]
+        indent = (indent_close if not indent_close.strip() else "") + "\t"
+        insert = "".join(f"{indent}{row}{eol}" for row in new_rows)
+        return cleaned[:line_start] + insert + cleaned[line_start:]
+    raise MenuError("в файле конфигурации нет групп для утилит: не знаю, куда вставлять пункты (формат отличается от проверенного)")
 
 
 def remove_entries(text: str) -> str:
-    """Убрать наши строки целиком (вместе с переводом строки)."""
+    """Убрать наши строки целиком (вместе с переводом строки); пустую группу, которую создали мы, свернуть обратно в «<Groups/>»."""
     def drop(m: re.Match) -> str:
         return "" if MARK in m.group(0) else m.group(0)
-    return _ROW.sub(drop, text)
+    removed = _ROW.sub(drop, text)
+    if removed != text:
+        removed = _ONLY_EMPTY_GROUP.sub("<Groups/>", removed)
+    return removed
 
 
 def _check_xml(text: str, path: Path) -> None:

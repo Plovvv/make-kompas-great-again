@@ -232,10 +232,12 @@ class HubWindow(WindowBase):
         self.d_name.grid(row=0, column=0, sticky="w")
         self.d_state = ttk.Label(box, style="Card.PillMuted.TLabel")
         self.d_state.grid(row=1, column=0, sticky="w", pady=(t.pad_small, t.pad_small))
+        actions = ttk.Frame(box, style="CardInner.TFrame")
+        actions.grid(row=2, column=0, sticky="ew", pady=(0, t.pad_small))
         self.d_desc = ttk.Label(box, style="Card.TLabel", wraplength=width, justify="left")
-        self.d_desc.grid(row=2, column=0, sticky="w", pady=(0, t.pad_small))
+        self.d_desc.grid(row=3, column=0, sticky="w", pady=(0, t.pad_small))
         meta = ttk.Frame(box, style="CardInner.TFrame")
-        meta.grid(row=3, column=0, sticky="ew")
+        meta.grid(row=4, column=0, sticky="ew")
         meta.columnconfigure(1, weight=1)
         self.d_meta: dict[str, ttk.Label] = {}
         for i, (key, title) in enumerate((("version", "Версия"), ("author", "Автор"), ("license", "Лицензия"),
@@ -245,9 +247,7 @@ class HubWindow(WindowBase):
             value.grid(row=i, column=1, sticky="w", padx=(t.pad, 0), pady=1)
             self.d_meta[key] = value
         self.d_compat = ttk.Label(box, style="Card.Muted.TLabel", wraplength=width, justify="left")
-        self.d_compat.grid(row=4, column=0, sticky="w", pady=(t.pad_small, 0))
-        actions = ttk.Frame(box, style="CardInner.TFrame")
-        actions.grid(row=5, column=0, sticky="ew", pady=(t.pad_small, 0))
+        self.d_compat.grid(row=5, column=0, sticky="w", pady=(t.pad_small, 0))
         self.install_btn = ttk.Button(actions, text="Установить", style="Card.Primary.TButton",
                                       command=self._install_selected)
         self.run_btn = ttk.Button(actions, text=self.label("Запустить", "play"), style="Card.TButton",

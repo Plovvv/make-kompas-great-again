@@ -75,6 +75,58 @@ class TextEditing(unittest.TestCase):
         self.assertEqual(e[1].params, '--mods-dir "C:\\mods" run components')
 
 
+EMPTY_V25 = '<?xml version="1.0" encoding="utf-16" ?>\n<Kit_Config>\n\t<Version>1.0</Version>\n\t<Groups/>\n</Kit_Config>\n'
+NO_UTILITIES = ('<?xml version="1.0" encoding="utf-16" ?>\n<Kit_Config>\n\t<Groups>\n\t\t<Group>\n'
+                '\t\t\t<Application libType="lbt_rtw_ocx" path="C:\\K\\a.rtw" id="A" libName="a" displayName="a" autostart="true"/>\n'
+                '\t\t</Group>\n\t</Groups>\n</Kit_Config>\n')
+
+
+class OtherLayouts(unittest.TestCase):
+    """КОМПАС v25: пользовательский файл пуст («<Groups/>»); бывают файлы с группами, но без утилит."""
+
+    def test_empty_groups_get_a_group_with_our_utilities_and_come_back_byte_for_byte(self):
+        from xml.etree import ElementTree as ET
+        for eol in ("\n", "\r\n"):
+            with self.subTest(eol=repr(eol)):
+                text = EMPTY_V25.replace("\n", eol)
+                new = km.apply_entries(text, ENTRIES)
+                root = ET.fromstring(km.encode_config(new))
+                (group,) = root.find("Groups").findall("Group")
+                self.assertEqual(len(group.findall("Utility")), 2)
+                self.assertEqual(len(km.our_rows(new)), 2)
+                self.assertNotIn("<Groups/>", new)
+                self.assertEqual(km.remove_entries(new), text)
+
+    def test_groups_without_utilities_get_rows_at_the_end_of_the_first_group(self):
+        from xml.etree import ElementTree as ET
+        new = km.apply_entries(NO_UTILITIES, ENTRIES)
+        root = ET.fromstring(km.encode_config(new))
+        group = root.find("Groups").find("Group")
+        self.assertEqual([c.tag for c in group], ["Application", "Utility", "Utility"])
+        self.assertEqual(km.remove_entries(new), NO_UTILITIES)
+
+    def test_file_without_any_group_is_still_refused(self):
+        with self.assertRaises(km.MenuError):
+            km.apply_entries("<Kit_Config><Version>1.0</Version></Kit_Config>", ENTRIES)
+
+    def test_apply_twice_on_empty_file_does_not_duplicate(self):
+        once = km.apply_entries(EMPTY_V25, ENTRIES)
+        twice = km.apply_entries(once, ENTRIES[:1])
+        self.assertEqual(len(km.our_rows(twice)), 1)
+        self.assertEqual(km.remove_entries(twice), EMPTY_V25)
+
+    def test_whole_file_roundtrip_on_a_v25_style_file(self):
+        appdata = make_appdata(EMPTY_V25, versions=("25",))
+        self.addCleanup(shutil.rmtree, appdata, True)
+        store = BackupStore(tempfile.mkdtemp(), trash=lambda p: None)
+        path = appdata / "ASCON" / "KOMPAS-3D" / "25" / "KOMPAS.kit.config"
+        before = path.read_bytes()
+        (report,) = km.apply(ENTRIES, appdata=appdata, store=store, running=lambda: False)
+        self.assertEqual((report.before, report.after), (0, 2))
+        self.assertTrue(store.undo(report.session_id).ok)
+        self.assertEqual(path.read_bytes(), before)
+
+
 class FileOperations(unittest.TestCase):
     def setUp(self):
         self.appdata = make_appdata(versions=("23", "24"))
