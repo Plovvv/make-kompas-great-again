@@ -1,0 +1,47 @@
+name: Release
+
+# Собирает exe при отправке тега v* и создаёт ЧЕРНОВИК релиза: опубликовать его вы решаете сами (docs/RELEASING.md).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Unit tests
+        shell: bash
+        run: python -m unittest discover -s tests -t .
+      - name: Check manifests, registry and guard
+        shell: bash
+        run: |
+          python tools/validate_registry.py
+          for d in mods/*/; do python -m mkga validate "$d"; done
+          python -m mkga check mods
+      - name: Tag matches the hub version
+        shell: bash
+        run: |
+          version=$(python -c "import mkga; print(mkga.__version__)")
+          test "v$version" = "${GITHUB_REF_NAME}" || { echo "Tag ${GITHUB_REF_NAME} does not match mkga.__version__ v$version"; exit 1; }
+      - name: Build exe (isolated environment, smoke checks without Python in PATH)
+        run: python tools/build_exe.py
+      - name: Checksums
+        shell: bash
+        run: |
+          cd build
+          sha256sum MKGA-*-windows.zip | tee SHA256SUMS.txt
+      - name: Create draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --draft --title "MKGA ${GITHUB_REF_NAME}" \
+            --notes "Неофициальный проект, с АСКОН не связан. Установка: docs/INSTALL.md. Контрольные суммы: SHA256SUMS.txt. Проверено на КОМПАС-3D v24 (полная версия); подробности и ограничения в CHANGELOG.md." \
+            build/MKGA-*-windows.zip build/SHA256SUMS.txt

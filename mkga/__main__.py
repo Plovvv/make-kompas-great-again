@@ -66,6 +66,33 @@ def _run_guarded(call) -> int:
     return 0
 
 
+def _install(args, mods_dir) -> int:
+    """Установить мод: из реестра, а если реестр недоступен или мода в нём нет, из поставки (папка bundled рядом с exe)."""
+    import urllib.error
+
+    from .bundled import BUNDLED_REPO, bundled_by_id, load_bundled, merge_entries
+    try:
+        catalog = load_registry(registry_source(args.registry))
+    except (RegistryError, OSError, urllib.error.URLError) as e:
+        print(f"Реестр недоступен ({e}), ищу в поставке.", file=sys.stderr)
+        catalog = []
+    bundled, problems = load_bundled()
+    for problem in problems:
+        print(f"Поставка: {problem}", file=sys.stderr)
+    entries = {e.id: e for e in merge_entries(catalog, bundled)}
+    entry = entries.get(args.id)
+    if entry is None:
+        print(f"Мод {args.id!r} не найден ни в реестре, ни в поставке.", file=sys.stderr)
+        return 1
+    if entry.repo == BUNDLED_REPO:
+        b = bundled_by_id(bundled)[entry.id]
+        m = install_zip(b.path, mods_dir, expected_id=entry.id, expected_sha256=entry.sha256)
+    else:
+        m = install_from_registry(entry, mods_dir)
+    print(f"Установлено: {m.name} {m.version}")
+    return 0
+
+
 def _kompas_menu(args, mods_dir) -> int:
     from . import kompas_menu as km
     versions = args.kompas_version
@@ -209,12 +236,7 @@ def main(argv: list[str] | None = None) -> int:
             for m in installed:
                 print(f"{m.id:24} {m.version:10} {m.name}")
         elif args.cmd == "install":
-            entries = {e.id: e for e in load_registry(registry_source(args.registry))}
-            if args.id not in entries:
-                print(f"Мод {args.id!r} не найден в реестре.", file=sys.stderr)
-                return 1
-            m = install_from_registry(entries[args.id], mods_dir)
-            print(f"Установлено: {m.name} {m.version}")
+            return _install(args, mods_dir)
         elif args.cmd == "install-zip":
             m = install_zip(args.zip, mods_dir)
             print(f"Установлено: {m.name} {m.version}")

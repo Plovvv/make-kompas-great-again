@@ -266,6 +266,21 @@ class HubTests(unittest.TestCase):
         settle(win, lambda: "КОМПАС запущен" in self.log())
         self.assertEqual(km.status(appdata=appdata), {"24": 0})
 
+    # --- моды из поставки -----------------------------------------------------------------------
+    def test_bundled_mod_is_listed_and_installed_without_the_network(self):
+        from mkga import bundled as B
+        out = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, out, True)
+        (mod,) = B.write_bundle([Path(__file__).resolve().parent.parent / "mods" / "_template"], out)
+        win = self._hub(loader=lambda src: [], bundled=[mod])        # каталог пуст, мод есть в поставке
+        self.assertEqual(self._ids(), [mod.id])
+        self.assertEqual(win.tree.item(mod.id, "values")[2], "Не установлен")
+        self._select(mod.id)
+        with mock.patch.object(win, "_installer", side_effect=AssertionError("сеть не нужна")):
+            win._install_selected()
+            settle(win, lambda: win.tree.item(mod.id, "values")[2] == "Установлен")
+        self.assertIn("из поставки", self.log())
+
     def test_history_lists_and_undoes(self):
         f = self._make_history()
         win = self._hub()

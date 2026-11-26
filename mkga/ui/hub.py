@@ -22,6 +22,7 @@ from tkinter import filedialog, messagebox, ttk
 from typing import Callable
 
 from .. import __version__
+from ..bundled import BUNDLED_REPO, BundledMod, bundled_by_id, load_bundled, merge_entries
 from ..core.safe_io import BackupStore
 from ..core.settings import Settings
 from ..core.versions import OK, REFUSE, check_version
@@ -70,12 +71,17 @@ class HubWindow(WindowBase):
         zip_installer: Callable[..., object] = install_zip,
         remover: Callable[..., bool] = uninstall,
         state: dict | None = None,
+        bundled: list[BundledMod] | None = None,
     ):
         self.mods_dir = Path(mods_dir)
         self.registry = registry
         self.theme_name = theme_name
         self._loader, self._launcher = loader, launcher
         self._installer, self._zip_installer, self._remover = installer, zip_installer, remover
+        self._bundled_problems: list[str] = []
+        if bundled is None:
+            bundled, self._bundled_problems = load_bundled()
+        self._bundled = bundled_by_id(bundled)           # моды из поставки: ставятся без сети
         ctx = ModContext(mod_dir=self.mods_dir, data_dir=self.mods_dir.parent / "data" / "hub",
                          backups=store or BackupStore(), mod_id="hub")
         super().__init__(ctx, "MKGA: хаб модов (неофициальный)", size=(1240, 740), min_size=(1000, 600),
@@ -91,6 +97,8 @@ class HubWindow(WindowBase):
         self._page = state.get("page", "catalog")
         self._selected: str | None = state.get("selected")
 
+        for problem in self._bundled_problems:
+            self.log(f"Поставка: {problem}", tag="error")
         self.register("catalog", self._on_catalog)
         self.register("mod_exit", self._on_mod_exit)
         self._build()
@@ -307,7 +315,7 @@ class HubWindow(WindowBase):
         self.refresh_rows()
 
     def refresh_rows(self) -> None:
-        self.rows = build_rows(self.entries, list_installed(self.mods_dir))
+        self.rows = build_rows(merge_entries(self.entries, list(self._bundled.values())), list_installed(self.mods_dir))
         self._render_list()
 
     def _visible_rows(self) -> list[ModRow]:
@@ -462,10 +470,15 @@ class HubWindow(WindowBase):
         if row is None or not row.can_install or self._busy:
             return
         entry = row.entry
+        bundle = self._bundled.get(entry.id) if entry.repo == BUNDLED_REPO else None
 
         def work(ctx: ModContext) -> None:
-            ctx.log(f"Скачиваю «{entry.name}» {entry.tag} и проверяю хеш…", tag="muted")
-            manifest = self._installer(entry, self.mods_dir)
+            if bundle is not None:
+                ctx.log(f"Ставлю «{entry.name}» {entry.tag} из поставки (без сети) и проверяю хеш…", tag="muted")
+                manifest = self._zip_installer(bundle.path, self.mods_dir, expected_id=entry.id, expected_sha256=entry.sha256)
+            else:
+                ctx.log(f"Скачиваю «{entry.name}» {entry.tag} и проверяю хеш…", tag="muted")
+                manifest = self._installer(entry, self.mods_dir)
             ctx.log(f"Установлено: {manifest.name} {manifest.version}", tag="ok")
 
         self.run_in_background(self._friendly(work), "Установка")

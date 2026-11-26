@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 BUILD = ROOT / "build"
 VENV = BUILD / "venv"
 DIST = BUILD / "dist"
+BUNDLED_MODS = ("components",)        # моды из папки mods/, которые кладутся в поставку (bundled/) и ставятся без сети
 sys.path.insert(0, str(ROOT))
 
 from mkga import __version__  # noqa: E402
@@ -90,12 +91,16 @@ def build(clean: bool) -> Path:
     run([py, "-m", "PyInstaller", "--noconfirm", "--clean", "--distpath", DIST, "--workpath", BUILD / "work",
          ROOT / "tools" / "mkga.spec"], cwd=ROOT)
     folder = DIST / "MKGA"
-    for name in ("LICENSE",):
+    for name in ("LICENSE", "THIRD_PARTY_NOTICES.md"):
         shutil.copy2(ROOT / name, folder / name)
+    from mkga.bundled import write_bundle
+    bundled = write_bundle([ROOT / "mods" / name for name in BUNDLED_MODS], folder / "bundled")
+    print("Моды в поставке:", ", ".join(f"{b.id} {b.version}" for b in bundled))
     (folder / "README.txt").write_text(
         "MKGA (MAKE KOMPAS GREAT AGAIN): неофициальный хаб модов для КОМПАС-3D. Проект не связан с АСКОН.\n\n"
         "Запуск: MKGA.exe (окно хаба). Python устанавливать не нужно. КОМПАС-3D должен быть установлен\n"
-        "и запущен, когда вы запускаете моды.\n"
+        "и запущен, когда вы запускаете моды. Мод «Каталог комплектующих» входит в поставку: в хабе откройте\n"
+        "«Каталог» и нажмите «Установить».\n"
         "Команды (сборка и проверка модов и т.д.): mkga-cli.exe --help\n"
         "Моды и их данные хранятся в %APPDATA%\\MKGA. Удалить программу: удалить эту папку.\n"
         "Исходный код и документация: https://github.com/Plovvv/make-kompas-great-again\n",
@@ -184,6 +189,10 @@ def smoke(folder: Path) -> None:
     proc.kill()
     assert alive, "MKGA.exe завершился сразу после запуска"
     print("  ✓ окно хаба запускается (MKGA.exe)")
+    r = cli_run("--registry", str(tmp / "нет-реестра.json"), "install", BUNDLED_MODS[0])
+    assert r.returncode == 0 and "Установлено" in r.stdout, r.stdout + r.stderr
+    assert BUNDLED_MODS[0] in cli_run("list").stdout
+    print("  ✓ мод из поставки ставится без сети и без реестра")
     shutil.rmtree(tmp, ignore_errors=True)
 
 
