@@ -211,9 +211,9 @@ def apply_theme(root: tk.Tk, palette: Palette = LIGHT) -> Theme:
         images.append(ph)
         return ph
 
-    tile = px(40)  # размер «середины» картинки: ttk закрашивает середину плитками этого размера
+    tile = px(160)  # размер «середины» картинки: ttk закрашивает середину плитками этого размера
 
-    def box(fill: str | None, border: str | None, radius: float, bw: float = 1.0):
+    def box(fill: str | None, border: str | None, radius: float, bw: float = 1.0, under: str | None = None):
         """Картинка со скруглением для растягиваемого элемента. Возвращает (PhotoImage, радиус в px).
 
         Рисуется минимальной (2r+2), затем середина размножается до tile: иначе ttk выкладывает большую
@@ -223,6 +223,8 @@ def apply_theme(root: tk.Tk, palette: Palette = LIGHT) -> Theme:
         r = px(radius)
         s0 = 2 * r + 2
         im = raster.Image(s0, s0)
+        if under is not None:
+            im.flood(under)       # непрозрачная картинка: скруглённые углы сразу «запечены» на фон родителя
         im.rrect(0, 0, s0, s0, r, fill, border, px(bw) if border else 0)
         return photo(im.stretched(r, 2 * r + tile, 2 * r + tile)), r
 
@@ -231,21 +233,24 @@ def apply_theme(root: tk.Tk, palette: Palette = LIGHT) -> Theme:
     card_rad = 12
 
     # Кнопки: (fill, border) по состояниям
-    def button_element(name: str, normal, hover, pressed, disabled, focus_border: str) -> None:
+    def button_element(name: str, normal, hover, pressed, disabled, focus_border: str, under: str | None = None) -> None:
         imgs = {}
         r = px(rad)
         for key, (fill, border) in dict(n=normal, h=hover, p=pressed, d=disabled, f=(normal[0], focus_border)).items():
-            imgs[key], _ = box(fill, border, rad, bw if key != "f" else 2.0)
+            imgs[key], _ = box(fill, border, rad, bw if key != "f" else 2.0, under=under)
         style.element_create(name, "image", imgs["n"], ("disabled", imgs["d"]), ("pressed", imgs["p"]),
                              ("active", imgs["h"]), ("focus", imgs["f"]), border=(r, r, r, r), sticky="nswe",
                              width=2 * r + 2, height=2 * r + 2)
 
-    button_element("Mkga.Button.bg", (p.surface, p.border_strong), (p.accent_soft, p.border_strong),
-                   (p.border, p.border_strong), (p.disabled_bg, p.border), p.accent)
-    button_element("Mkga.Primary.bg", (p.accent, p.accent), (p.accent_hover, p.accent_hover),
-                   (p.accent_press, p.accent_press), (p.disabled_bg, p.border), p.text)
-    button_element("Mkga.Ghost.bg", (p.bg, p.bg), (p.accent_soft, p.accent_soft), (p.border, p.border),
-                   (p.bg, p.bg), p.accent)
+    # Картинки НЕПРОЗРАЧНЫЕ (углы запечены на фон родителя): Tk рисует их в разы быстрее картинок с альфа-каналом, а от
+    # этого зависит, как окно перерисовывается при изменении размера. Поэтому два набора: «.c» для кнопок внутри карточки.
+    for suffix, around in (("", p.bg), (".c", p.surface)):
+        button_element("Mkga.Button.bg" + suffix, (p.surface, p.border_strong), (p.accent_soft, p.border_strong),
+                       (p.border, p.border_strong), (p.disabled_bg, p.border), p.accent, under=around)
+        button_element("Mkga.Primary.bg" + suffix, (p.accent, p.accent), (p.accent_hover, p.accent_hover),
+                       (p.accent_press, p.accent_press), (p.disabled_bg, p.border), p.text, under=around)
+        button_element("Mkga.Ghost.bg" + suffix, (p.bg, p.bg), (p.accent_soft, p.accent_soft), (p.border, p.border),
+                       (p.bg, p.bg), p.accent, under=around)
 
     def button_layout(name: str, element: str) -> None:
         style.layout(name, [(element, {"sticky": "nswe", "children": [
@@ -263,16 +268,16 @@ def apply_theme(root: tk.Tk, palette: Palette = LIGHT) -> Theme:
             ("Ghost.TButton", "Mkga.Ghost.bg", p.text),
         ):
             name = prefix + base
-            button_layout(name, element)
+            button_layout(name, element + (".c" if prefix else ""))
             style.configure(name, padding=btn_pad, foreground=fg, background=around, relief="flat",
                             borderwidth=0, anchor="center", font=heading if base.startswith("Primary") else default)
             style.map(name, foreground=[("disabled", p.disabled_text)], background=[("disabled", around)])
 
     # Боковая навигация: пункт и выбранный пункт (текст слева, выбранный залит мягким акцентом)
     button_element("Mkga.Nav.bg", (p.bg, p.bg), (p.accent_soft, p.accent_soft), (p.border, p.border),
-                   (p.bg, p.bg), p.accent)
+                   (p.bg, p.bg), p.accent, under=p.bg)
     button_element("Mkga.NavActive.bg", (p.accent_soft, p.accent_soft), (p.accent_soft, p.accent_soft),
-                   (p.accent_soft, p.accent_soft), (p.accent_soft, p.accent_soft), p.accent)
+                   (p.accent_soft, p.accent_soft), (p.accent_soft, p.accent_soft), p.accent, under=p.bg)
     for name, element, fg, fnt in (("Nav.TButton", "Mkga.Nav.bg", p.text, default),
                                    ("NavActive.TButton", "Mkga.NavActive.bg", p.accent, heading)):
         button_layout(name, element)
@@ -282,13 +287,15 @@ def apply_theme(root: tk.Tk, palette: Palette = LIGHT) -> Theme:
 
     # Поля ввода
     r = px(rad)
-    fld_n, _ = box(p.surface, p.border_strong, rad, bw)
-    fld_f, _ = box(p.surface, p.accent, rad, 2.0)
-    fld_d, _ = box(p.disabled_bg, p.border, rad, bw)
-    style.element_create("Mkga.Field.bg", "image", fld_n, ("disabled", fld_d), ("focus", fld_f),
-                         border=(r, r, r, r), sticky="nswe", width=2 * r + 2, height=2 * r + 2)
-    style.layout("TEntry", [("Mkga.Field.bg", {"sticky": "nswe", "children": [
-        ("Entry.padding", {"sticky": "nswe", "children": [("Entry.textarea", {"sticky": "nswe"})]})]})])
+    for suffix, around in (("", p.bg), (".c", p.surface)):
+        fld_n, _ = box(p.surface, p.border_strong, rad, bw, under=around)
+        fld_f, _ = box(p.surface, p.accent, rad, 2.0, under=around)
+        fld_d, _ = box(p.disabled_bg, p.border, rad, bw, under=around)
+        style.element_create("Mkga.Field.bg" + suffix, "image", fld_n, ("disabled", fld_d), ("focus", fld_f),
+                             border=(r, r, r, r), sticky="nswe", width=2 * r + 2, height=2 * r + 2)
+    for name, suffix in (("TEntry", ""), ("Card.TEntry", ".c")):
+        style.layout(name, [("Mkga.Field.bg" + suffix, {"sticky": "nswe", "children": [
+            ("Entry.padding", {"sticky": "nswe", "children": [("Entry.textarea", {"sticky": "nswe"})]})]})])
     style.configure("TEntry", padding=(px(10), px(7)), fieldbackground=p.surface, foreground=p.text,
                     insertcolor=p.text, selectbackground=p.accent, selectforeground=p.on_accent, background=p.bg)
     style.map("TEntry", foreground=[("disabled", p.disabled_text)], fieldbackground=[("disabled", p.disabled_bg)])
@@ -304,9 +311,10 @@ def apply_theme(root: tk.Tk, palette: Palette = LIGHT) -> Theme:
 
     style.element_create("Mkga.Chevron", "image", chevron(p.muted), ("disabled", chevron(p.disabled_text)),
                          ("active", chevron(p.text)), sticky="")
-    style.layout("TCombobox", [("Mkga.Field.bg", {"sticky": "nswe", "children": [
-        ("Mkga.Chevron", {"side": "right", "sticky": "ns"}),
-        ("Combobox.padding", {"expand": "1", "sticky": "nswe", "children": [("Combobox.textarea", {"sticky": "nswe"})]})]})])
+    for name, suffix in (("TCombobox", ""), ("Card.TCombobox", ".c")):
+        style.layout(name, [("Mkga.Field.bg" + suffix, {"sticky": "nswe", "children": [
+            ("Mkga.Chevron", {"side": "right", "sticky": "ns"}),
+            ("Combobox.padding", {"expand": "1", "sticky": "nswe", "children": [("Combobox.textarea", {"sticky": "nswe"})]})]})])
     style.configure("TCombobox", padding=(px(10), px(7)), fieldbackground=p.surface, foreground=p.text,
                     background=p.bg, arrowsize=px(12), selectbackground=p.surface, selectforeground=p.text)
     style.configure("Card.TCombobox", background=p.surface)
@@ -320,7 +328,7 @@ def apply_theme(root: tk.Tk, palette: Palette = LIGHT) -> Theme:
 
     # Карточка
     cr = px(card_rad)
-    card_img, _ = box(p.surface, p.border, card_rad, bw)
+    card_img, _ = box(p.surface, p.border, card_rad, bw, under=p.bg)
     style.element_create("Mkga.Card.bg", "image", card_img, border=(cr, cr, cr, cr), sticky="nswe",
                          width=2 * cr + 2, height=2 * cr + 2)
     style.layout("Card.TFrame", [("Mkga.Card.bg", {"sticky": "nswe", "children": [
@@ -329,7 +337,7 @@ def apply_theme(root: tk.Tk, palette: Palette = LIGHT) -> Theme:
     # Обычный контейнер ВНУТРИ карточки (без своей рамки): фон как у карточки
     style.configure("CardInner.TFrame", background=p.surface)
     # Тёмная «консольная» карточка для журнала
-    log_img, _ = box(p.log_bg, p.log_bg, card_rad, bw)
+    log_img, _ = box(p.log_bg, p.log_bg, card_rad, bw, under=p.bg)
     style.element_create("Mkga.LogCard.bg", "image", log_img, border=(cr, cr, cr, cr), sticky="nswe",
                          width=2 * cr + 2, height=2 * cr + 2)
     style.layout("Log.TFrame", [("Mkga.LogCard.bg", {"sticky": "nswe", "children": [
@@ -352,11 +360,14 @@ def apply_theme(root: tk.Tk, palette: Palette = LIGHT) -> Theme:
     def pill(name: str, fill: str, fg: str) -> None:
         h = px(14)
         s = 2 * h + 2  # +2: у картинки должна быть растягиваемая середина (иначе виден только край)
-        im = raster.Image(s, s)
-        im.rrect(0, 0, s, s, h, fill)
-        style.element_create(f"Mkga.{name}.bg", "image", photo(im), border=(h, h, h, h), sticky="nswe")
+        for suffix, around in (("", p.bg), (".c", p.surface)):       # непрозрачные: «.c» для плашек внутри карточки
+            im = raster.Image(s, s)
+            im.flood(around)
+            im.rrect(0, 0, s, s, h, fill)
+            style.element_create(f"Mkga.{name}.bg{suffix}", "image", photo(im.stretched(h, 2 * h + tile, 2 * h + tile)),
+                                 border=(h, h, h, h), sticky="nswe", width=s, height=s)
         for prefix, around in (("", p.bg), ("Card.", p.surface)):
-            style.layout(f"{prefix}{name}.TLabel", [(f"Mkga.{name}.bg", {"sticky": "nswe", "children": [
+            style.layout(f"{prefix}{name}.TLabel", [(f"Mkga.{name}.bg{'.c' if prefix else ''}", {"sticky": "nswe", "children": [
                 ("Label.padding", {"sticky": "nswe", "children": [("Label.label", {"sticky": "nswe"})]})]})])
             style.configure(f"{prefix}{name}.TLabel", background=around, foreground=fg,
                             padding=(px(12), px(4)), font=default)
@@ -429,10 +440,10 @@ def apply_theme(root: tk.Tk, palette: Palette = LIGHT) -> Theme:
     bar = raster.Image(ps, ps)
     bar.rrect(0, 0, ps, ps, ph, p.accent)
     # Имена элементов обязаны оканчиваться на «.trough» / «.pbar»: по ним виджет находит свои части.
-    style.element_create("Mkga.Horizontal.Progressbar.trough", "image", photo(trough),
-                         border=(ph, ph, ph, ph), sticky="nswe")
-    style.element_create("Mkga.Horizontal.Progressbar.pbar", "image", photo(bar),
-                         border=(ph, ph, ph, ph), sticky="nswe")
+    style.element_create("Mkga.Horizontal.Progressbar.trough", "image", photo(trough.stretched(ph, ps + tile, ps)),
+                         border=(ph, ph, ph, ph), sticky="nswe", width=ps, height=ps)
+    style.element_create("Mkga.Horizontal.Progressbar.pbar", "image", photo(bar.stretched(ph, ps + tile, ps)),
+                         border=(ph, ph, ph, ph), sticky="nswe", width=ps, height=ps)
     style.layout("Horizontal.TProgressbar", [("Mkga.Horizontal.Progressbar.trough", {"sticky": "nswe", "children": [
         ("Mkga.Horizontal.Progressbar.pbar", {"sticky": "ns", "side": "left"})]})])
     style.configure("Horizontal.TProgressbar", background=p.bg)
@@ -453,12 +464,14 @@ def apply_theme(root: tk.Tk, palette: Palette = LIGHT) -> Theme:
                 im.rrect(inset, 0, t_, h, t_ / 2.0, col)
             else:
                 im.rrect(0, inset, w, t_, t_ / 2.0, col)
+            # середина вдоль полосы крупная (иначе Tk выкладывает ползунок сотнями плиток по 2 пикселя)
+            im = im.stretched(cap + inset, w, h + tile) if vertical else im.stretched(cap + inset, w + tile, h)
             thumbs.append(photo(im))
         # у картинки есть растягиваемая середина только вдоль полосы
         border = (0, cap + inset, 0, cap + inset) if vertical else (cap + inset, 0, cap + inset, 0)
         # имя элемента оканчивается на «.thumb»: так виджет прокрутки находит ползунок
         style.element_create(f"Mkga.{orient}.Scrollbar.thumb", "image", thumbs[0], ("pressed", thumbs[2]),
-                             ("active", thumbs[1]), border=border, sticky="nswe")
+                             ("active", thumbs[1]), border=border, sticky="nswe", width=w, height=h)
         style.layout(f"{orient}.TScrollbar", [(f"{orient}.Scrollbar.trough", {
             "sticky": "ns" if orient == "Vertical" else "we",
             "children": [(f"Mkga.{orient}.Scrollbar.thumb", {"expand": "1", "sticky": "nswe"})]})])

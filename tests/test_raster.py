@@ -56,6 +56,26 @@ class RasterTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             small.stretched(12, 20, 80)    # уменьшать нельзя
 
+    def test_flood_makes_the_picture_opaque_with_baked_corners(self):
+        img = Image(26, 26)
+        img.flood("#F3F4F7")
+        img.rrect(0, 0, 26, 26, radius=12, fill="#FFFFFF", border="#E1E4EA", border_w=1)
+        for x, y in ((0, 0), (25, 0), (0, 25), (13, 13), (3, 3)):
+            self.assertEqual(img.alpha_at(x, y), 1.0)                  # нигде нет прозрачности: Tk рисует такую картинку быстро
+        self.assertEqual(img.rgba_at(0, 0)[:3], (243, 244, 247))       # угол цвета фона родителя
+        self.assertEqual(img.rgba_at(13, 13)[:3], (255, 255, 255))
+
+    def test_stretched_along_one_axis_only(self):
+        thumb = Image(12, 20)
+        thumb.rrect(3, 0, 6, 20, 3.0, "#999999")
+        tall = thumb.stretched(7, 12, 100)                             # ползунок вертикальной полосы: растём только вниз
+        self.assertEqual((tall.w, tall.h), (12, 100))
+        self.assertEqual(tall.rgba_at(6, 50), thumb.rgba_at(6, 10))    # середина размножена
+        self.assertEqual(tall.rgba_at(0, 50), thumb.rgba_at(0, 10))    # по горизонтали ничего не растянуто
+        wide = Image(20, 12)
+        wide.rrect(0, 3, 20, 6, 3.0, "#999999")
+        self.assertEqual(wide.stretched(7, 100, 12).w, 100)
+
     def test_png_is_valid(self):
         img = Image(5, 3)
         img.rrect(0, 0, 5, 3, radius=1, fill="#336699")

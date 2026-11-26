@@ -44,6 +44,14 @@ class Image:
         # плоский список: [r, g, b, a] на пиксель, a в 0..1
         self._px = [0.0, 0.0, 0.0, 0.0] * (width * height)
 
+    def flood(self, color: str | Color) -> None:
+        """Залить всю картинку непрозрачным цветом (потом поверх рисуется остальное): картинка без прозрачности
+        показывается Tk гораздо быстрее, чем картинка с альфа-каналом."""
+        r, g, b = parse_color(color) if isinstance(color, str) else color[:3]
+        px = self._px
+        for i in range(0, len(px), 4):
+            px[i], px[i + 1], px[i + 2], px[i + 3] = r, g, b, 1.0
+
     # --- низкий уровень -------------------------------------------------------------------
     def _over(self, x: int, y: int, color: Color, alpha: float) -> None:
         if alpha <= 0.0:
@@ -144,7 +152,7 @@ class Image:
         (секунды на кадр или зависание). Середина исходной картинки должна быть однородной.
         """
         b = border
-        if b < 0 or self.w < 2 * b + 1 or self.h < 2 * b + 1:
+        if b < 0 or (new_w != self.w and self.w < 2 * b + 1) or (new_h != self.h and self.h < 2 * b + 1):
             raise ValueError("у картинки нет середины для растягивания")
         if new_w < self.w or new_h < self.h:
             raise ValueError("растягивать можно только в большую сторону")
@@ -153,11 +161,14 @@ class Image:
         row_len = self.w * 4
         cache: dict[int, list[float]] = {}
         for y in range(new_h):
-            sy = y if y < b else self.h - (new_h - y) if y >= new_h - b else b
+            sy = y if (y < b or new_h == self.h) else self.h - (new_h - y) if y >= new_h - b else b
             row = cache.get(sy)
             if row is None:
                 s_row = src[sy * row_len:(sy + 1) * row_len]
-                row = s_row[:b * 4] + s_row[b * 4:(b + 1) * 4] * (new_w - 2 * b) + s_row[row_len - b * 4:]
+                if new_w == self.w:        # по горизонтали не растягиваем (ползунок вертикальной полосы)
+                    row = s_row
+                else:
+                    row = s_row[:b * 4] + s_row[b * 4:(b + 1) * 4] * (new_w - 2 * b) + s_row[row_len - b * 4:]
                 cache[sy] = row
             dst[y * new_w * 4:(y + 1) * new_w * 4] = row
         return out
