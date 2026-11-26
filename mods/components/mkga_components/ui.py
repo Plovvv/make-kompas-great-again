@@ -85,7 +85,7 @@ class ComponentsWindow(WindowBase):
         body = ttk.Frame(root, padding=(t.pad, t.pad_small, t.pad, 0))
         body.grid(row=1, column=0, sticky="nsew")
         body.columnconfigure(2, weight=1)
-        body.rowconfigure(0, weight=1)
+        body.rowconfigure(0, weight=1, minsize=t.px(300))   # на маленьком экране чертёж не должен схлопываться
         self._build_tree_card(body).grid(row=0, column=0, sticky="ns", padx=(0, t.pad))
         self._build_params_card(body).grid(row=0, column=1, sticky="ns", padx=(0, t.pad))
         self._build_drawing_card(body).grid(row=0, column=2, sticky="nsew")
@@ -111,7 +111,7 @@ class ComponentsWindow(WindowBase):
         search = ttk.Entry(card, textvariable=self.search_var, style="Card.TEntry", width=26)
         search.grid(row=1, column=0, sticky="ew", pady=(t.pad_small, t.pad_small))
         self.search_var.trace_add("write", lambda *_: self._fill_tree())
-        self.tree = ttk.Treeview(card, show="tree", selectmode="browse", height=18)
+        self.tree = ttk.Treeview(card, show="tree", selectmode="browse", height=10)
         self.tree.column("#0", width=t.px(270), stretch=True)
         self.tree.grid(row=2, column=0, sticky="nsew")
         sb = ttk.Scrollbar(card, orient="vertical", command=self.tree.yview)

@@ -18,7 +18,16 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: Unit tests
-        run: python -m unittest discover -s tests -t .
+        shell: bash
+        run: |
+          set +e
+          python -m unittest discover -s tests -t . 2>&1 | tee unittest.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            # причина падения видна в аннотациях запуска без входа в GitHub
+            grep -E "^(ERROR|FAIL):|Error|Exception|assert" unittest.log | head -15 | cut -c1-300 | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+          exit $code
       - name: Validate registry
         run: python tools/validate_registry.py
       - name: Validate mod manifests

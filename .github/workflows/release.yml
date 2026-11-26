@@ -18,7 +18,15 @@ jobs:
           python-version: "3.12"
       - name: Unit tests
         shell: bash
-        run: python -m unittest discover -s tests -t .
+        run: |
+          set +e
+          python -m unittest discover -s tests -t . 2>&1 | tee unittest.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            # причина падения видна в аннотациях запуска без входа в GitHub
+            grep -E "^(ERROR|FAIL):|Error|Exception|assert" unittest.log | head -15 | cut -c1-300 | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+          exit $code
       - name: Check manifests, registry and guard
         shell: bash
         run: |
